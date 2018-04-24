@@ -112,6 +112,9 @@ VtolAttitudeControl::VtolAttitudeControl()
 
 	if (_vtol_type == nullptr || !_vtol_type->init()) {
 		request_stop();
+
+	} else {
+		_vtol_type->parameters_update();
 	}
 
 	_airspeed_sub = orb_subscribe(ORB_ID(airspeed));
