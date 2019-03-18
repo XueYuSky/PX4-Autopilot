@@ -35,11 +35,10 @@ px4_add_module(
 	MAIN lis3mdl
 	STACK_MAIN 1200
 	COMPILE_FLAGS
+		-Wno-cast-align # TODO: fix and enable
 	SRCS
 		lis3mdl_i2c.cpp
 		lis3mdl_spi.cpp
+		lis3mdl_main.cpp
 		lis3mdl.cpp
-	DEPENDS
-		platforms__common
 	)
-# vim: set noet ft=cmake fenc=utf-8 ff=unix :

@@ -54,8 +54,7 @@
 #include <sys/ioctl.h>
 #include <unistd.h>
 #include <systemlib/err.h>
-#include <systemlib/perf_counter.h>
-#include <systemlib/systemlib.h>
+#include <perf/perf_counter.h>
 
 #include "../comms.h"
 #include "../messages.h"
@@ -167,8 +166,6 @@ send_data(int uart, uint8_t *buffer, size_t size)
 int
 hott_telemetry_thread_main(int argc, char *argv[])
 {
-	warnx("starting");
-
 	connect_count = perf_alloc(PC_COUNT,	"reconnects       ");
 	recon_port = perf_alloc(PC_COUNT,		"reopen port      ");
 	reqs_count = perf_alloc(PC_COUNT,		"requests        ");

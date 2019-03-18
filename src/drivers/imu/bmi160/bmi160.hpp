@@ -16,9 +16,8 @@
 #include <stdio.h>
 #include <math.h>
 #include <unistd.h>
-#include <getopt.h>
 
-#include <systemlib/perf_counter.h>
+#include <perf/perf_counter.h>
 #include <systemlib/err.h>
 #include <systemlib/conversions.h>
 
@@ -307,7 +306,6 @@ private:
 	perf_counter_t		_good_transfers;
 	perf_counter_t		_reset_retries;
 	perf_counter_t		_duplicates;
-	perf_counter_t		_controller_latency_perf;
 
 	uint8_t			_register_wait;
 	uint64_t		_reset_wait;
@@ -430,20 +428,6 @@ private:
 	 * @return 0 on success, 1 on failure
 	 */
 	int 			self_test();
-
-	/**
-	 * Accel self test
-	 *
-	 * @return 0 on success, 1 on failure
-	 */
-	int 			accel_self_test();
-
-	/**
-	 * Gyro self test
-	 *
-	 * @return 0 on success, 1 on failure
-	 */
-	int 			gyro_self_test();
 
 	/*
 	  set low pass filter frequency

@@ -63,7 +63,6 @@
 /* SPI protocol address bits */
 #define DIR_READ			(1<<7)
 #define DIR_WRITE			(0<<7)
-#define ADDR_INCREMENT			(1<<6)
 
 #define HMC_MAX_SEND_LEN		4
 #define HMC_MAX_RCV_LEN			8
@@ -74,7 +73,7 @@ class LPS25H_SPI : public device::SPI
 {
 public:
 	LPS25H_SPI(int bus, uint32_t device);
-	virtual ~LPS25H_SPI();
+	virtual ~LPS25H_SPI() = default;
 
 	virtual int	init();
 	virtual int	read(unsigned address, void *data, unsigned count);
@@ -94,10 +93,6 @@ LPS25H_SPI::LPS25H_SPI(int bus, uint32_t device) :
 	SPI("LPS25H_SPI", nullptr, bus, device, SPIDEV_MODE3, 11 * 1000 * 1000 /* will be rounded to 10.4 MHz */)
 {
 	_device_id.devid_s.devtype = DRV_MAG_DEVTYPE_LPS25H;
-}
-
-LPS25H_SPI::~LPS25H_SPI()
-{
 }
 
 int
@@ -170,7 +165,7 @@ LPS25H_SPI::read(unsigned address, void *data, unsigned count)
 		return -EIO;
 	}
 
-	buf[0] = address | DIR_READ | ADDR_INCREMENT;
+	buf[0] = address | DIR_READ;
 
 	int ret = transfer(&buf[0], &buf[0], count + 1);
 	memcpy(data, &buf[1], count);

@@ -34,11 +34,14 @@ px4_add_module(
 	MODULE drivers__sf0x
 	MAIN sf0x
 	COMPILE_FLAGS
-		-Wno-sign-compare # TODO: fix all sign-compare
+		-Wno-cast-align # TODO: fix and enable
 	SRCS
 		sf0x.cpp
 		sf0x_parser.cpp
-	DEPENDS
-		platforms__common
+	MODULE_CONFIG
+		module.yaml
 	)
-# vim: set noet ft=cmake fenc=utf-8 ff=unix :
+
+if(PX4_TESTING)
+	add_subdirectory(sf0x_tests)
+endif()

@@ -58,8 +58,9 @@
 #include <drivers/drv_hrt.h>
 #include <drivers/drv_pwm_output.h>
 #include <lib/ecl/geo/geo.h>
-#include <lib/mathlib/mathlib.h>
-#include <systemlib/param/param.h>
+#include <mathlib/mathlib.h>
+#include <matrix/math.hpp>
+#include <parameters/param.h>
 
 #include <uORB/topics/actuator_controls.h>
 #include <uORB/topics/airspeed.h>
@@ -75,7 +76,6 @@
 #include <uORB/topics/vehicle_local_position.h>
 #include <uORB/topics/vehicle_local_position_setpoint.h>
 #include <uORB/topics/position_setpoint_triplet.h>
-#include <uORB/topics/vehicle_rates_setpoint.h>
 #include <uORB/topics/vtol_vehicle_status.h>
 
 #include "tiltrotor.h"
@@ -127,13 +127,11 @@ private:
 	int	_actuator_inputs_mc{-1};	//topic on which the mc_att_controller publishes actuator inputs
 	int	_airspeed_sub{-1};			// airspeed subscription
 	int	_fw_virtual_att_sp_sub{-1};
-	int	_fw_virtual_v_rates_sp_sub{-1};		//vehicle rates setpoint subscription
 	int	_land_detected_sub{-1};
 	int	_local_pos_sp_sub{-1};			// setpoint subscription
 	int	_local_pos_sub{-1};			// sensor subscription
 	int	_manual_control_sp_sub{-1};	//manual control setpoint subscription
 	int	_mc_virtual_att_sp_sub{-1};
-	int	_mc_virtual_v_rates_sp_sub{-1};		//vehicle rates setpoint subscription
 	int	_params_sub{-1};			//parameter updates subscription
 	int	_pos_sp_triplet_sub{-1};			// local position setpoint subscription
 	int	_tecs_status_sub{-1};
@@ -147,7 +145,6 @@ private:
 	orb_advert_t	_mavlink_log_pub{nullptr};	// mavlink log uORB handle
 	orb_advert_t	_v_att_sp_pub{nullptr};
 	orb_advert_t	_v_cmd_ack_pub{nullptr};
-	orb_advert_t	_v_rates_sp_pub{nullptr};
 	orb_advert_t	_vtol_vehicle_status_pub{nullptr};
 	orb_advert_t 	_actuators_1_pub{nullptr};
 
@@ -188,9 +185,6 @@ private:
 		param_t fw_qc_max_roll;
 		param_t front_trans_time_openloop;
 		param_t front_trans_time_min;
-		param_t wv_takeoff;
-		param_t wv_loiter;
-		param_t wv_land;
 		param_t front_trans_duration;
 		param_t back_trans_duration;
 		param_t transition_airspeed;
@@ -201,6 +195,9 @@ private:
 		param_t front_trans_timeout;
 		param_t mpc_xy_cruise;
 		param_t fw_motors_off;
+		param_t diff_thrust;
+		param_t diff_thrust_scale;
+		param_t v19_vt_rolldir;
 	} _params_handles{};
 
 	/* for multicopters it is usual to have a non-zero idle speed of the engines
@@ -214,7 +211,7 @@ private:
 //*****************Member functions***********************************************************************
 
 	void 		task_main();	//main task
-	static void	task_main_trampoline(int argc, char *argv[]);	//Shim for calling task_main from task_create.
+	static int	task_main_trampoline(int argc, char *argv[]);	//Shim for calling task_main from task_create.
 
 	void		land_detected_poll();
 	void		tecs_status_poll();
@@ -231,10 +228,7 @@ private:
 	void 		vehicle_local_pos_poll();		// Check for changes in sensor values
 	void 		vehicle_local_pos_sp_poll();		// Check for changes in setpoint values
 
-	int 		parameters_update();			//Update local paraemter cache
-
-	void 		fill_mc_att_rates_sp();
-	void 		fill_fw_att_rates_sp();
+	int 		parameters_update();			//Update local parameter cache
 
 	void		handle_command();
 };

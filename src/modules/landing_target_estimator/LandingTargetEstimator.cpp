@@ -78,10 +78,6 @@ LandingTargetEstimator::LandingTargetEstimator() :
 	_check_params(true);
 }
 
-LandingTargetEstimator::~LandingTargetEstimator()
-{
-}
-
 void LandingTargetEstimator::update()
 {
 	_check_params(false);

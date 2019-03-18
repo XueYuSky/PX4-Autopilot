@@ -51,7 +51,7 @@
 #include <px4_getopt.h>
 #include <errno.h>
 
-#include <systemlib/perf_counter.h>
+#include <perf/perf_counter.h>
 #include <systemlib/err.h>
 
 #include <drivers/drv_mag.h>
@@ -297,7 +297,6 @@ int DfHmc5883Wrapper::_publish(struct mag_sensor_data &data)
 
 	// TODO: get these right
 	//mag_report.scaling = -1.0f;
-	//mag_report.range_m_s2 = -1.0f;
 
 	mag_report.device_id = m_id.dev_id;
 

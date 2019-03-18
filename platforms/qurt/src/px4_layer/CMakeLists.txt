@@ -30,7 +30,8 @@
 # POSSIBILITY OF SUCH DAMAGE.
 #
 ############################################################################
-set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${PX4_SOURCE_DIR}/cmake/cmake_hexagon")
+
+list(APPEND CMAKE_MODULE_PATH "${PX4_SOURCE_DIR}/boards/atlflight/cmake_hexagon")
 include(hexagon_sdk)
 
 include_directories(${HEXAGON_8074_INCLUDES})
@@ -39,10 +40,11 @@ set(QURT_LAYER_SRCS
 	px4_qurt_impl.cpp
 	px4_qurt_tasks.cpp
 	lib_crc32.c
-	../../../posix/src/px4_layer/drv_hrt.c
+	../../../posix/src/px4_layer/drv_hrt.cpp
 	qurt_stubs.c
 	main.cpp
-	shmem_qurt.c
+	shmem_qurt.cpp
+	px4_init.cpp
 	)
 
 if ("${QURT_ENABLE_STUBS}" STREQUAL "1")
@@ -52,12 +54,9 @@ if ("${QURT_ENABLE_STUBS}" STREQUAL "1")
 		)
 endif()
 
-px4_add_module(
-	MODULE platforms_px4_layer
-	COMPILE_FLAGS
-	SRCS
-		${QURT_LAYER_SRCS}
-		${CONFIG_SRC}
-	DEPENDS
-		platforms__common
-	)
+add_library(px4_layer
+	${QURT_LAYER_SRCS}
+	${CONFIG_SRC}
+)
+target_link_libraries(px4_layer PRIVATE work_queue)
+add_dependencies(px4_layer uorb_msgs) # dataman requires mission

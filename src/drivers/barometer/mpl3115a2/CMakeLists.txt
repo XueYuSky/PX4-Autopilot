@@ -30,18 +30,13 @@
 # POSSIBILITY OF SUCH DAMAGE.
 #
 ############################################################################
-set(srcs
-	mpl3115a2_i2c.cpp
-	mpl3115a2.cpp
-)
-
 px4_add_module(
 	MODULE drivers__mpl3115a2
 	MAIN mpl3115a2
 	STACK_MAIN 1200
 	COMPILE_FLAGS
-	SRCS ${srcs}
-	DEPENDS
-		platforms__common
+		-Wno-cast-align # TODO: fix and enable
+	SRCS
+		mpl3115a2_i2c.cpp
+		mpl3115a2.cpp
 	)
-# vim: set noet ft=cmake fenc=utf-8 ff=unix :

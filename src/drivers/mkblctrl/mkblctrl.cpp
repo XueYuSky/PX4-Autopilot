@@ -44,7 +44,7 @@
 #include <px4_config.h>
 #include <px4_tasks.h>
 #include <drivers/device/i2c.h>
-#include <systemlib/param/param.h>
+#include <parameters/param.h>
 
 #include <sys/types.h>
 #include <stdint.h>
@@ -71,7 +71,6 @@
 #include <drivers/drv_mixer.h>
 #include <drivers/drv_tone_alarm.h>
 
-#include <systemlib/systemlib.h>
 #include <systemlib/err.h>
 #include <lib/mixer/mixer.h>
 
@@ -178,8 +177,8 @@ private:
 	actuator_controls_s 	_controls;
 	MotorData_t 			Motor[MAX_MOTORS];
 
-	static void				task_main_trampoline(int argc, char *argv[]);
-	void					task_main();
+	static int				task_main_trampoline(int argc, char *argv[]);
+	int					task_main();
 
 	static int				control_callback(uintptr_t handle,
 			uint8_t control_group,
@@ -320,10 +319,10 @@ MK::init(unsigned motors)
 	return OK;
 }
 
-void
+int
 MK::task_main_trampoline(int argc, char *argv[])
 {
-	g_mk->task_main();
+	return g_mk->task_main();
 }
 
 void
@@ -459,7 +458,7 @@ MK::play_beep(int count)
 
 }
 
-void
+int
 MK::task_main()
 {
 	int32_t param_mkblctrl_test = 0;
@@ -665,7 +664,7 @@ MK::task_main()
 
 	/* tell the dtor that we are exiting */
 	_task = -1;
-	_exit(0);
+	return 0;
 }
 
 

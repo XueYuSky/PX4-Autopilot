@@ -49,7 +49,7 @@
 
 
 #include <drivers/device/ringbuffer.h>
-#include <systemlib/perf_counter.h>
+#include <perf/perf_counter.h>
 
 #include <uORB/uORB.h>
 #include <uORB/topics/pwm_input.h>
@@ -57,7 +57,7 @@
 
 
 
-class LidarLitePWM : public LidarLite, public device::CDev
+class LidarLitePWM : public LidarLite, public cdev::CDev
 {
 public:
 	LidarLitePWM(const char *path, uint8_t rotation = distance_sensor_s::ROTATION_DOWNWARD_FACING);

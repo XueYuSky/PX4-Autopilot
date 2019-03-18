@@ -58,7 +58,7 @@
 #include <uORB/topics/led_control.h>
 #include <uORB/topics/tune_control.h>
 #include <systemlib/err.h>
-#include <systemlib/param/param.h>
+#include <parameters/param.h>
 #include <drivers/drv_hrt.h>
 #include <drivers/drv_tone_alarm.h>
 
@@ -94,10 +94,11 @@ bool is_multirotor(const struct vehicle_status_s *current_status)
 bool is_rotary_wing(const struct vehicle_status_s *current_status)
 {
 	return is_multirotor(current_status) || (current_status->system_type == VEHICLE_TYPE_HELICOPTER)
-		   || (current_status->system_type == VEHICLE_TYPE_COAXIAL);
+	       || (current_status->system_type == VEHICLE_TYPE_COAXIAL);
 }
 
-bool is_vtol(const struct vehicle_status_s * current_status) {
+bool is_vtol(const struct vehicle_status_s *current_status)
+{
 	return (current_status->system_type == VEHICLE_TYPE_VTOL_DUOROTOR ||
 		current_status->system_type == VEHICLE_TYPE_VTOL_QUADROTOR ||
 		current_status->system_type == VEHICLE_TYPE_VTOL_TILTROTOR ||
@@ -128,6 +129,10 @@ int buzzer_init()
 	tune_durations[TONE_NOTIFY_NEGATIVE_TUNE] = 900000;
 	tune_durations[TONE_NOTIFY_NEUTRAL_TUNE] = 500000;
 	tune_durations[TONE_ARMING_WARNING_TUNE] = 3000000;
+	tune_durations[TONE_HOME_SET] = 800000;
+	tune_durations[TONE_BATTERY_WARNING_FAST_TUNE] = 800000;
+	tune_durations[TONE_BATTERY_WARNING_SLOW_TUNE] = 800000;
+	tune_durations[TONE_SINGLE_BEEP_TUNE] = 300000;
 	tune_control_pub = orb_advertise(ORB_ID(tune_control), &tune_control);
 	return PX4_OK;
 }
@@ -140,7 +145,7 @@ void buzzer_deinit()
 void set_tune_override(int tune)
 {
 	tune_control.tune_id = tune;
-	tune_control.strength = tune_control_s::STRENGTH_NORMAL;
+	tune_control.volume = tune_control_s::VOLUME_LEVEL_DEFAULT;
 	tune_control.tune_override = 1;
 	tune_control.timestamp = hrt_absolute_time();
 	orb_publish(ORB_ID(tune_control), tune_control_pub, &tune_control);
@@ -155,7 +160,7 @@ void set_tune(int tune)
 		/* allow interrupting current non-repeating tune by the same tune */
 		if (tune != tune_current || new_tune_duration != 0) {
 			tune_control.tune_id = tune;
-			tune_control.strength = tune_control_s::STRENGTH_NORMAL;
+			tune_control.volume = tune_control_s::VOLUME_LEVEL_DEFAULT;
 			tune_control.tune_override = 0;
 			tune_control.timestamp = hrt_absolute_time();
 			orb_publish(ORB_ID(tune_control), tune_control_pub, &tune_control);
@@ -275,7 +280,6 @@ int led_init()
 	led_control.timestamp = hrt_absolute_time();
 	led_control_pub = orb_advertise_queue(ORB_ID(led_control), &led_control, LED_UORB_QUEUE_LENGTH);
 
-#ifndef CONFIG_ARCH_BOARD_RPI
 	/* first open normal LEDs */
 	DevMgr::getHandle(LED0_DEVICE_PATH, h_leds);
 
@@ -283,6 +287,9 @@ int led_init()
 		PX4_WARN("LED: getHandle fail\n");
 		return PX4_ERROR;
 	}
+
+	/* the green LED is only available on FMUv5 */
+	(void)h_leds.ioctl(LED_ON, LED_GREEN);
 
 	/* the blue LED is only available on AeroCore but not FMUv2 */
 	(void)h_leds.ioctl(LED_ON, LED_BLUE);
@@ -298,7 +305,6 @@ int led_init()
 
 	/* switch amber off */
 	led_off(LED_AMBER);
-#endif
 
 	return 0;
 }
@@ -306,9 +312,7 @@ int led_init()
 void led_deinit()
 {
 	orb_unadvertise(led_control_pub);
-#ifndef CONFIG_ARCH_BOARD_RPI
 	DevMgr::releaseHandle(h_leds);
-#endif
 }
 
 int led_toggle(int led)
@@ -336,6 +340,7 @@ void rgbled_set_color_and_mode(uint8_t color, uint8_t mode, uint8_t blinks, uint
 	orb_publish(ORB_ID(led_control), led_control_pub, &led_control);
 }
 
-void rgbled_set_color_and_mode(uint8_t color, uint8_t mode){
+void rgbled_set_color_and_mode(uint8_t color, uint8_t mode)
+{
 	rgbled_set_color_and_mode(color, mode, 0, 0);
 }
