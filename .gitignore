@@ -17,7 +17,6 @@ Testing/
 Packages/*
 build/*
 build_*/
-core
 cscope.out
 cscope.in.out
 cscope.po.out
@@ -65,7 +64,6 @@ posix-configs/SITL/init/test/*_generated
 .coverage
 .coverage.*
 
-.vscode/.cortex-debug.peripherals.state.json
-.vscode/.cortex-debug.registers.state.json
-.vscode/c_cpp_properties.json
-
+# KDevelop ignores
+.kdev4/*
+*.kdev4
