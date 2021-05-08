@@ -33,9 +33,9 @@
 
 #include "LowPassFilter2pVector3f.hpp"
 
-#include <px4_defines.h>
+#include <px4_platform_common/defines.h>
 
-#include <cmath>
+#include <math.h>
 
 namespace math
 {
@@ -43,6 +43,7 @@ namespace math
 void LowPassFilter2pVector3f::set_cutoff_frequency(float sample_freq, float cutoff_freq)
 {
 	_cutoff_freq = cutoff_freq;
+	_sample_freq = sample_freq;
 
 	// reset delay elements on filter change
 	_delay_element_1.zero();

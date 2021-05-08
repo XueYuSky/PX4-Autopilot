@@ -41,11 +41,12 @@
 */
 
 #include <drivers/drv_hrt.h>
-#include <px4_defines.h>
-#include <px4_posix.h>
-#include <px4_tasks.h>
-#include <px4_time.h>
-#include <px4_shutdown.h>
+#include <px4_platform_common/defines.h>
+#include <px4_platform_common/posix.h>
+#include <px4_platform_common/tasks.h>
+#include <px4_platform_common/time.h>
+#include <px4_platform_common/shutdown.h>
+#include <lib/parameters/param.h>
 
 #include <cstring>
 #include <float.h>
@@ -66,10 +67,10 @@
 #define PARAMS_OVERRIDE_FILE PX4_ROOTFSDIR "/replay_params.txt"
 
 using namespace std;
+using namespace time_literals;
 
 namespace px4
 {
-class Replay;
 
 char *Replay::_replay_file = nullptr;
 
@@ -126,7 +127,9 @@ Replay::setupReplayFile(const char *file_name)
 void
 Replay::setUserParams(const char *filename)
 {
-	string line, param_name, value_string;
+	string line;
+	string pname;
+	string value_string;
 	ifstream myfile(filename);
 
 	if (!myfile.is_open()) {
@@ -143,23 +146,37 @@ Replay::setUserParams(const char *filename)
 		}
 
 		istringstream mystrstream(line);
-		mystrstream >> param_name;
+		mystrstream >> pname;
 		mystrstream >> value_string;
 
 		double param_value_double = stod(value_string);
 
-		param_t handle = param_find(param_name.c_str());
+		param_t handle = param_find(pname.c_str());
 		param_type_t param_format = param_type(handle);
-		_overridden_params.insert(param_name);
+		_overridden_params.insert(pname);
 
 		if (param_format == PARAM_TYPE_INT32) {
-			int32_t value = 0;
-			value = (int32_t)param_value_double;
+			int32_t orig_value = 0;
+			param_get(handle, &orig_value);
+
+			int32_t value = (int32_t)param_value_double;
+
+			if (orig_value != value) {
+				PX4_WARN("setting %s (INT32) %d -> %d", param_name(handle), orig_value, value);
+			}
+
 			param_set(handle, (const void *)&value);
 
 		} else if (param_format == PARAM_TYPE_FLOAT) {
-			float value = 0;
-			value = (float)param_value_double;
+			float orig_value = 0;
+			param_get(handle, &orig_value);
+
+			float value = (float)param_value_double;
+
+			if (fabsf(orig_value - value) > FLT_EPSILON) {
+				PX4_WARN("setting %s (FLOAT) %.3f -> %.3f", param_name(handle), (double)orig_value, (double)value);
+			}
+
 			param_set(handle, (const void *)&value);
 		}
 	}
@@ -382,7 +399,7 @@ Replay::readAndAddSubscription(std::ifstream &file, uint16_t msg_size)
 		}
 
 		if (!compat) {
-			PX4_WARN("Formats for %s don't match. Will ignore it.", topic_name.c_str());
+			PX4_ERR("Formats for %s don't match. Will ignore it.", topic_name.c_str());
 			PX4_WARN(" Internal format: %s", orb_meta->o_fields);
 			PX4_WARN(" File format    : %s", file_format.c_str());
 			return true; // not a fatal error
@@ -548,7 +565,7 @@ Replay::readDropout(std::ifstream &file, uint16_t msg_size)
 	uint16_t duration;
 	file.read((char *)&duration, sizeof(duration));
 
-	PX4_INFO("Dropout in replayed log, %i ms", (int)duration);
+	PX4_ERR("Dropout in replayed log, %i ms", (int)duration);
 	return file.good();
 }
 
@@ -749,6 +766,13 @@ Replay::run()
 		return;
 	}
 
+	_speed_factor = 1.f;
+	const char *speedup = getenv("PX4_SIM_SPEED_FACTOR");
+
+	if (speedup) {
+		_speed_factor = atof(speedup);
+	}
+
 	onEnterMainLoop();
 
 	_replay_start_time = hrt_absolute_time();
@@ -766,9 +790,7 @@ Replay::run()
 		return;
 	}
 
-	//we update the timestamps from the file by a constant offset to match
-	//the current replay time
-	const uint64_t timestamp_offset = _replay_start_time - _file_start_time;
+	const uint64_t timestamp_offset = getTimestampOffset();
 	uint32_t nr_published_messages = 0;
 	streampos last_additional_message_pos = _data_section_start;
 
@@ -848,13 +870,23 @@ Replay::run()
 	if (!should_exit()) {
 		PX4_INFO("Replay done (published %u msgs, %.3lf s)", nr_published_messages,
 			 (double)hrt_elapsed_time(&_replay_start_time) / 1.e6);
-
-		//TODO: add parameter -q?
-		replay_file.close();
-		px4_shutdown_request(false, false);
 	}
 
 	onExitMainLoop();
+
+	if (!should_exit()) {
+		replay_file.close();
+		px4_shutdown_request();
+		// we need to ensure the shutdown logic gets updated and eventually triggers shutdown
+		hrt_abstime t = hrt_absolute_time();
+
+		for (int i = 0; i < 1000; ++i) {
+			struct timespec ts;
+			abstime_to_ts(&ts, t);
+			px4_clock_settime(CLOCK_MONOTONIC, &ts);
+			t += 10_ms;
+		}
+	}
 }
 
 void
@@ -883,7 +915,20 @@ Replay::handleTopicDelay(uint64_t next_file_time, uint64_t timestamp_offset)
 
 	// if some topics have a timestamp smaller than the log file start, publish them immediately
 	if (cur_time < publish_timestamp && next_file_time > _file_start_time) {
-		px4_usleep(publish_timestamp - cur_time);
+		if (_speed_factor > FLT_EPSILON) {
+			// avoid many small usleep calls
+			_accumulated_delay += (publish_timestamp - cur_time) / _speed_factor;
+
+			if (_accumulated_delay > 3000) {
+				system_usleep(_accumulated_delay);
+				_accumulated_delay = 0.f;
+			}
+		}
+
+		// adjust the lockstep time to the publication time
+		struct timespec ts;
+		abstime_to_ts(&ts, publish_timestamp);
+		px4_clock_settime(CLOCK_MONOTONIC, &ts);
 	}
 
 	return publish_timestamp;
@@ -926,7 +971,7 @@ Replay::publishTopic(Subscription &sub, void *data)
 
 			if (advertised) {
 				int instance;
-				sub.orb_advert = orb_advertise_multi(sub.orb_meta, data, &instance, ORB_PRIO_DEFAULT);
+				sub.orb_advert = orb_advertise_multi(sub.orb_meta, data, &instance);
 				published = true;
 			}
 		}
@@ -954,49 +999,14 @@ Replay::custom_command(int argc, char *argv[])
 }
 
 int
-Replay::print_usage(const char *reason)
-{
-	if (reason) {
-		PX4_WARN("%s\n", reason);
-	}
-
-	PRINT_MODULE_DESCRIPTION(
-		R"DESCR_STR(
-### Description
-This module is used to replay ULog files.
-
-There are 2 environment variables used for configuration: `replay`, which must be set to an ULog file name - it's
-the log file to be replayed. The second is the mode, specified via `replay_mode`:
-- `replay_mode=ekf2`: specific EKF2 replay mode. It can only be used with the ekf2 module, but allows the replay
-  to run as fast as possible.
-- Generic otherwise: this can be used to replay any module(s), but the replay will be done with the same speed as the
-  log was recorded.
-
-The module is typically used together with uORB publisher rules, to specify which messages should be replayed.
-The replay module will just publish all messages that are found in the log. It also applies the parameters from
-the log.
-
-The replay procedure is documented on the [System-wide Replay](https://dev.px4.io/en/debug/system_wide_replay.html)
-page.
-)DESCR_STR");
-
-	PRINT_MODULE_USAGE_NAME("replay", "system");
-	PRINT_MODULE_USAGE_COMMAND_DESCR("start", "Start replay, using log file from ENV variable 'replay'");
-	PRINT_MODULE_USAGE_COMMAND_DESCR("trystart", "Same as 'start', but silently exit if no log file given");
-	PRINT_MODULE_USAGE_COMMAND_DESCR("tryapplyparams", "Try to apply the parameters from the log file");
-	PRINT_MODULE_USAGE_DEFAULT_COMMANDS();
-
-	return 0;
-}
-
-int
 Replay::task_spawn(int argc, char *argv[])
 {
 	// check if a log file was found
 	if (!isSetup()) {
-		if (argc > 0 && strncmp(argv[0], "try", 3)==0) {
+		if (argc > 0 && strncmp(argv[0], "try", 3) == 0) {
 			return 0;
 		}
+
 		PX4_ERR("no log file given (via env variable %s)", replay::ENV_FILENAME);
 		return -1;
 	}
@@ -1021,8 +1031,9 @@ Replay::applyParams(bool quiet)
 {
 	if (!isSetup()) {
 		if (quiet) {
-			return 0;
+			return -1;
 		}
+
 		PX4_ERR("no log file given (via env variable %s)", replay::ENV_FILENAME);
 		return -1;
 	}
@@ -1053,6 +1064,7 @@ Replay::instantiate(int argc, char *argv[])
 	const char *replay_mode = getenv(replay::ENV_MODE);
 
 	Replay *instance = nullptr;
+
 	if (replay_mode && strcmp(replay_mode, "ekf2") == 0) {
 		PX4_INFO("Ekf2 replay mode");
 		instance = new ReplayEkf2();
@@ -1062,6 +1074,42 @@ Replay::instantiate(int argc, char *argv[])
 	}
 
 	return instance;
+}
+
+int
+Replay::print_usage(const char *reason)
+{
+	if (reason) {
+		PX4_WARN("%s\n", reason);
+	}
+
+	PRINT_MODULE_DESCRIPTION(
+		R"DESCR_STR(
+### Description
+This module is used to replay ULog files.
+
+There are 2 environment variables used for configuration: `replay`, which must be set to an ULog file name - it's
+the log file to be replayed. The second is the mode, specified via `replay_mode`:
+- `replay_mode=ekf2`: specific EKF2 replay mode. It can only be used with the ekf2 module, but allows the replay
+  to run as fast as possible.
+- Generic otherwise: this can be used to replay any module(s), but the replay will be done with the same speed as the
+  log was recorded.
+
+The module is typically used together with uORB publisher rules, to specify which messages should be replayed.
+The replay module will just publish all messages that are found in the log. It also applies the parameters from
+the log.
+
+The replay procedure is documented on the [System-wide Replay](https://dev.px4.io/master/en/debug/system_wide_replay.html)
+page.
+)DESCR_STR");
+
+	PRINT_MODULE_USAGE_NAME("replay", "system");
+	PRINT_MODULE_USAGE_COMMAND_DESCR("start", "Start replay, using log file from ENV variable 'replay'");
+	PRINT_MODULE_USAGE_COMMAND_DESCR("trystart", "Same as 'start', but silently exit if no log file given");
+	PRINT_MODULE_USAGE_COMMAND_DESCR("tryapplyparams", "Try to apply the parameters from the log file");
+	PRINT_MODULE_USAGE_DEFAULT_COMMANDS();
+
+	return 0;
 }
 
 } //namespace px4

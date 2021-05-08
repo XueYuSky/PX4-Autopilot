@@ -11,16 +11,21 @@
 @#  - ids (List) list of all RTPS msg ids
 @###############################################
 @{
+from packaging import version
 import genmsg.msgs
-import gencpp
+
 from px_generate_uorb_topic_helper import * # this is in Tools/
 
 topic = alias if alias else spec.short_name
+try:
+    ros2_distro = ros2_distro.decode("utf-8")
+except AttributeError:
+    pass
 }@
 /****************************************************************************
  *
  * Copyright 2017 Proyectos y Sistemas de Mantenimiento SL (eProsima).
- * Copyright (C) 2018-2019 PX4 Development Team. All rights reserved.
+ * Copyright (c) 2018-2019 PX4 Development Team. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -57,6 +62,7 @@ topic = alias if alias else spec.short_name
  * This file was adapted from the fastcdrgen tool.
  */
 
+
 #include <fastrtps/participant/Participant.h>
 #include <fastrtps/attributes/ParticipantAttributes.h>
 #include <fastrtps/publisher/Publisher.h>
@@ -64,114 +70,94 @@ topic = alias if alias else spec.short_name
 
 #include <fastrtps/Domain.h>
 
-@[if 1.5 <= fastrtpsgen_version <= 1.7]@
-#include <fastrtps/utils/eClock.h>
-@[end if]@
-
 #include "@(topic)_Publisher.h"
 
+@(topic)_Publisher::@(topic)_Publisher()
+    : mp_participant(nullptr),
+      mp_publisher(nullptr)
+{ }
 
-@(topic)_Publisher::@(topic)_Publisher() : mp_participant(nullptr), mp_publisher(nullptr) {}
+@(topic)_Publisher::~@(topic)_Publisher()
+{
+    Domain::removeParticipant(mp_participant);
+}
 
-@(topic)_Publisher::~@(topic)_Publisher() { Domain::removeParticipant(mp_participant);}
-
-bool @(topic)_Publisher::init()
+bool @(topic)_Publisher::init(const std::string& ns)
 {
     // Create RTPSParticipant
     ParticipantAttributes PParam;
+@[if version.parse(fastrtps_version) < version.parse('2.0')]@
     PParam.rtps.builtin.domainId = 0;
-@[if 1.5 <= fastrtpsgen_version <= 1.7]@
+@[else]@
+    PParam.domainId = 0;
+@[end if]@
+@[if version.parse(fastrtps_version) <= version.parse('1.8.4')]@
     PParam.rtps.builtin.leaseDuration = c_TimeInfinite;
 @[else]@
     PParam.rtps.builtin.discovery_config.leaseDuration = c_TimeInfinite;
 @[end if]@
-    PParam.rtps.setName("@(topic)_publisher");  //You can put here the name you want
+    std::string nodeName = ns;
+    nodeName.append("@(topic)_publisher");
+    PParam.rtps.setName(nodeName.c_str());
     mp_participant = Domain::createParticipant(PParam);
     if(mp_participant == nullptr)
         return false;
 
     // Register the type
-    Domain::registerType(mp_participant, static_cast<TopicDataType*>(&myType));
+    Domain::registerType(mp_participant, static_cast<TopicDataType*>(&@(topic)DataType));
 
     // Create Publisher
     PublisherAttributes Wparam;
     Wparam.topic.topicKind = NO_KEY;
-    Wparam.topic.topicDataType = myType.getName();  //This type MUST be registered
-@[if 1.5 <= fastrtpsgen_version <= 1.7]@
-    Wparam.topic.topicName = "@(topic)_PubSubTopic";
+    Wparam.topic.topicDataType = @(topic)DataType.getName();
+@[if ros2_distro]@
+@[    if ros2_distro == "ardent"]@
+    Wparam.qos.m_partition.push_back("rt");
+    std::string topicName = ns;
+    topicName.append("@(topic)_PubSubTopic");
+    Wparam.topic.topicName = topicName;
+@[    else]@
+    std::string topicName = "rt/";
+    topicName.append(ns);
+    topicName.append("@(topic)_PubSubTopic");
+    Wparam.topic.topicName = topicName;
+@[    end if]@
 @[else]@
-    Wparam.topic.topicName = "@(topic)PubSubTopic";
-@[end if]@
-@[if ros2_distro and ros2_distro != "ardent"]@
-    Wparam.topic.topicName = "rt/" + Wparam.topic.topicName;
+    std::string topicName = ns;
+    topicName.append("@(topic)PubSubTopic");
+    Wparam.topic.topicName = topicName;
 @[end if]@
     mp_publisher = Domain::createPublisher(mp_participant, Wparam, static_cast<PublisherListener*>(&m_listener));
     if(mp_publisher == nullptr)
         return false;
-    //std::cout << "Publisher created, waiting for Subscribers." << std::endl;
     return true;
 }
 
 void @(topic)_Publisher::PubListener::onPublicationMatched(Publisher* pub, MatchingInfo& info)
 {
-    if (info.status == MATCHED_MATCHING)
-    {
-        n_matched++;
-        std::cout << "Publisher matched" << std::endl;
-    }
-    else
-    {
-        n_matched--;
-        std::cout << "Publisher unmatched" << std::endl;
-    }
-}
-
-void @(topic)_Publisher::run()
-{
-    while(m_listener.n_matched == 0)
-    {
-@[if 1.5 <= fastrtpsgen_version <= 1.7]@
-        eClock::my_sleep(250); // Sleep 250 ms;
-@[else]@
-        std::this_thread::sleep_for(std::chrono::milliseconds(250)); // Sleep 250 ms
-@[end if]@
-    }
-
-    // Publication code
-@[if 1.5 <= fastrtpsgen_version <= 1.7]@
-    @(topic)_ st;
-@[else]@
-    @(topic) st;
-@[end if]@
-
-    /* Initialize your structure here */
-
-    int msgsent = 0;
-    char ch = 'y';
-    do
-    {
-        if(ch == 'y')
-        {
-            mp_publisher->write(&st);  ++msgsent;
-            std::cout << "Sending sample, count=" << msgsent << ", send another sample?(y-yes,n-stop): ";
-        }
-        else if(ch == 'n')
-        {
-            std::cout << "Stopping execution " << std::endl;
+    // The first 6 values of the ID guidPrefix of an entity in a DDS-RTPS Domain
+    // are the same for all its subcomponents (publishers, subscribers)
+    bool is_different_endpoint = false;
+    for (size_t i = 0; i < 6; i++) {
+        if (pub->getGuid().guidPrefix.value[i] != info.remoteEndpointGuid.guidPrefix.value[i]) {
+            is_different_endpoint = true;
             break;
         }
-        else
-        {
-            std::cout << "Command " << ch << " not recognized, please enter \"y/n\":";
+    }
+
+    // If the matching happens for the same entity, do not make a match
+    if (is_different_endpoint) {
+        if (info.status == MATCHED_MATCHING) {
+            n_matched++;
+            std::cout << "\033[0;37m[   micrortps_agent   ]\t@(topic) publisher matched\033[0m" << std::endl;
+        } else {
+            n_matched--;
+            std::cout << "\033[0;37m[   micrortps_agent   ]\t@(topic) publisher unmatched\033[0m" << std::endl;
         }
-    }while(std::cin >> ch);
+    }
 }
 
-@[if 1.5 <= fastrtpsgen_version <= 1.7]@
-void @(topic)_Publisher::publish(@(topic)_* st)
-@[else]@
-void @(topic)_Publisher::publish(@(topic)* st)
-@[end if]@
+void @(topic)_Publisher::publish(@(topic)_msg_t* st)
 {
     mp_publisher->write(st);
 }

@@ -1,6 +1,6 @@
 /****************************************************************************
 *
-*   Copyright (c) 2016-2017 PX4 Development Team. All rights reserved.
+*   Copyright (c) 2016-2020 PX4 Development Team. All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
 * modification, are permitted provided that the following conditions
@@ -41,7 +41,9 @@
 
 #include <math.h>
 
-#include <px4_posix.h>
+#include <px4_platform_common/posix.h>
+#include <lib/matrix/matrix/math.hpp>
+#include <lib/mathlib/mathlib.h>
 
 
 namespace vmount
@@ -65,12 +67,17 @@ int InputTest::update(unsigned int timeout_ms, ControlData **control_data, bool 
 
 	_control_data.type = ControlData::Type::Angle;
 
-	for (int i = 0; i < 3; ++i) {
-		_control_data.type_data.angle.is_speed[i] = false;
-		_control_data.type_data.angle.angles[i] = _angles[i] * M_DEG_TO_RAD_F;
+	_control_data.type_data.angle.frames[0] = ControlData::TypeData::TypeAngle::Frame::AngleAbsoluteFrame;
+	_control_data.type_data.angle.frames[1] = ControlData::TypeData::TypeAngle::Frame::AngleAbsoluteFrame;
+	_control_data.type_data.angle.frames[2] = ControlData::TypeData::TypeAngle::Frame::AngleBodyFrame;
 
-		_control_data.stabilize_axis[i] = false;
-	}
+	matrix::Eulerf euler(
+		math::radians(_angles[0]),
+		math::radians(_angles[1]),
+		math::radians(_angles[2]));
+	matrix::Quatf q(euler);
+
+	q.copyTo(_control_data.type_data.angle.q);
 
 	_control_data.gimbal_shutter_retract = false;
 	*control_data = &_control_data;

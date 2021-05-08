@@ -36,8 +36,8 @@
 
 #include <string.h>
 
-#include <px4_tasks.h>
-#include <px4_time.h>
+#include <px4_platform_common/tasks.h>
+#include <px4_platform_common/time.h>
 #include <drivers/drv_hrt.h>
 
 namespace px4
@@ -72,8 +72,7 @@ WorkQueue::~WorkQueue()
 #endif /* __PX4_NUTTX */
 }
 
-bool
-WorkQueue::Attach(WorkItem *item)
+bool WorkQueue::Attach(WorkItem *item)
 {
 	work_lock();
 
@@ -87,8 +86,7 @@ WorkQueue::Attach(WorkItem *item)
 	return false;
 }
 
-void
-WorkQueue::Detach(WorkItem *item)
+void WorkQueue::Detach(WorkItem *item)
 {
 	work_lock();
 
@@ -99,35 +97,47 @@ WorkQueue::Detach(WorkItem *item)
 		PX4_DEBUG("stopping: %s, last active WorkItem closing", _config.name);
 
 		request_stop();
-
-		// Wake up the worker thread
-		px4_sem_post(&_process_lock);
+		SignalWorkerThread();
 	}
 
 	work_unlock();
 }
 
-void
-WorkQueue::Add(WorkItem *item)
+void WorkQueue::Add(WorkItem *item)
 {
 	work_lock();
+
+#if defined(ENABLE_LOCKSTEP_SCHEDULER)
+
+	if (_lockstep_component == -1) {
+		_lockstep_component = px4_lockstep_register_component();
+	}
+
+#endif // ENABLE_LOCKSTEP_SCHEDULER
+
 	_q.push(item);
 	work_unlock();
 
-	// Wake up the worker thread
-	px4_sem_post(&_process_lock);
+	SignalWorkerThread();
 }
 
-void
-WorkQueue::Remove(WorkItem *item)
+void WorkQueue::SignalWorkerThread()
+{
+	int sem_val;
+
+	if (px4_sem_getvalue(&_process_lock, &sem_val) == 0 && sem_val <= 0) {
+		px4_sem_post(&_process_lock);
+	}
+}
+
+void WorkQueue::Remove(WorkItem *item)
 {
 	work_lock();
 	_q.remove(item);
 	work_unlock();
 }
 
-void
-WorkQueue::Clear()
+void WorkQueue::Clear()
 {
 	work_lock();
 
@@ -138,11 +148,11 @@ WorkQueue::Clear()
 	work_unlock();
 }
 
-void
-WorkQueue::Run()
+void WorkQueue::Run()
 {
 	while (!should_exit()) {
-		px4_sem_wait(&_process_lock);
+		// loop as the wait may be interrupted by a signal
+		do {} while (px4_sem_wait(&_process_lock) != 0);
 
 		work_lock();
 
@@ -153,8 +163,18 @@ WorkQueue::Run()
 			work_unlock(); // unlock work queue to run (item may requeue itself)
 			work->RunPreamble();
 			work->Run();
+			// Note: after Run() we cannot access work anymore, as it might have been deleted
 			work_lock(); // re-lock
 		}
+
+#if defined(ENABLE_LOCKSTEP_SCHEDULER)
+
+		if (_q.empty()) {
+			px4_lockstep_unregister_component(_lockstep_component);
+			_lockstep_component = -1;
+		}
+
+#endif // ENABLE_LOCKSTEP_SCHEDULER
 
 		work_unlock();
 	}
@@ -162,12 +182,11 @@ WorkQueue::Run()
 	PX4_DEBUG("%s: exiting", _config.name);
 }
 
-void
-WorkQueue::print_status(bool last)
+void WorkQueue::print_status(bool last)
 {
 	const size_t num_items = _work_items.size();
 	PX4_INFO_RAW("%-16s\n", get_name());
-	size_t i = 0;
+	unsigned i = 0;
 
 	for (WorkItem *item : _work_items) {
 		i++;
@@ -180,10 +199,10 @@ WorkQueue::print_status(bool last)
 		}
 
 		if (i < num_items) {
-			PX4_INFO_RAW("|__ %zu) ", i);
+			PX4_INFO_RAW("|__%2d) ", i);
 
 		} else {
-			PX4_INFO_RAW("\\__ %zu) ", i);
+			PX4_INFO_RAW("\\__%2d) ", i);
 		}
 
 		item->print_run_status();

@@ -49,9 +49,9 @@
 
 #include <uORB/topics/distance_sensor.h>
 
-#include <px4_module.h>
-#include <px4_module_params.h>
-#include <px4_tasks.h>
+#include <px4_platform_common/module.h>
+#include <px4_platform_common/module_params.h>
+#include <px4_platform_common/tasks.h>
 
 
 #define PGA460_DEFAULT_PORT "/dev/ttyS6"
@@ -268,11 +268,6 @@ public:
 	void print_diagnostics(const uint8_t diagnostic_byte);
 
 	/**
-	 * Diagnostics - print some basic information about the driver.
-	 */
-	int print_status() override;
-
-	/**
 	 * @brief Reads the threshold registers.
 	 * @return Returns true if the threshold registers are set to default
 	 */
@@ -387,7 +382,7 @@ private:
 	/** @orb_advert_t orb_advert_t uORB advertisement topic. */
 	orb_advert_t _distance_sensor_topic{nullptr};
 
-	/** @param _fd Returns the file descriptor from px4_open(). */
+	/** @param _fd Returns the file descriptor from open(). */
 	int _fd{-1};
 
 	/** @param _port Stores the port name. */
@@ -407,6 +402,8 @@ private:
 
 	/** @param _start_loop The starting value for the loop time of the main loop. */
 	uint64_t _start_loop{0};
+
+	device::Device::DeviceId _device_id;
 };
 
 #endif

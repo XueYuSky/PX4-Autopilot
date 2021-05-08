@@ -34,8 +34,6 @@
 
 
 __BEGIN_DECLS
-#include <nuttx/spi/spi.h>
-#include <nuttx/i2c/i2c_master.h>
 
 /* For historical reasons (NuttX STM32 numbering) PX4 bus numbering is 1 based
  * All PX4 code, including, board code is written to assuming 1 based numbering.
@@ -49,6 +47,9 @@ __BEGIN_DECLS
 
 #define px4_enter_critical_section()       enter_critical_section()
 #define px4_leave_critical_section(flags)  leave_critical_section(flags)
+
+#define px4_udelay(usec) up_udelay(usec)
+#define px4_mdelay(msec) up_mdelay(msec)
 
 #include <arch/board/board.h>
 

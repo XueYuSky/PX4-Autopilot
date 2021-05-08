@@ -33,7 +33,7 @@
 
 #=============================================================================
 #
-#	px4_add_gtest
+#	px4_add_unit_gtest
 #
 #	Adds a googletest unit test to the test_results target.
 #
@@ -90,10 +90,9 @@ function(px4_add_functional_gtest)
 
 		# link the libary to test and gtest
 		target_link_libraries(${TESTNAME} ${LINKLIBS} gtest_functional_main
-		                                              px4_daemon
-		                                              px4_platform
-		                                              modules__uORB
 		                                              px4_layer
+		                                              px4_platform
+		                                              uORB
 		                                              systemlib
 		                                              cdev
 		                                              px4_work_queue

@@ -32,108 +32,104 @@
  ****************************************************************************/
 
 /**
- * @file paw3902.cpp
+ * @file PAW3902.hpp
  *
- * Driver for the Pixart PAW3902 optical flow sensor connected via SPI.
+ * Driver for the Pixart PAW3902 & PAW3903 optical flow sensors connected via SPI.
  */
 
 #pragma once
 
 #include "PixArt_PAW3902JF_Registers.hpp"
 
-#include <px4_config.h>
-#include <px4_defines.h>
-#include <px4_getopt.h>
-#include <px4_platform_common/px4_work_queue/ScheduledWorkItem.hpp>
+#include <px4_platform_common/px4_config.h>
+#include <px4_platform_common/defines.h>
+#include <px4_platform_common/getopt.h>
+#include <px4_platform_common/i2c_spi_buses.h>
 #include <drivers/device/spi.h>
 #include <conversion/rotation.h>
 #include <lib/perf/perf_counter.h>
 #include <lib/parameters/param.h>
 #include <drivers/drv_hrt.h>
-#include <drivers/drv_range_finder.h>
 #include <uORB/PublicationMulti.hpp>
 #include <uORB/topics/optical_flow.h>
-
-/* Configuration Constants */
-
-#if defined PX4_SPI_BUS_EXPANSION   // crazyflie
-# define PAW3902_BUS PX4_SPI_BUS_EXPANSION
-#elif defined PX4_SPI_BUS_EXTERNAL1   // fmu-v5
-# define PAW3902_BUS PX4_SPI_BUS_EXTERNAL1
-#elif defined PX4_SPI_BUS_EXTERNAL    // fmu-v4 extspi
-# define PAW3902_BUS PX4_SPI_BUS_EXTERNAL
-#else
-# error "add the required spi bus from board_config.h here"
-#endif
-
-#if defined PX4_SPIDEV_EXPANSION_2    // crazyflie flow deck
-# define PAW3902_SPIDEV PX4_SPIDEV_EXPANSION_2
-#elif defined PX4_SPIDEV_EXTERNAL1_1    // fmu-v5 ext CS1
-# define PAW3902_SPIDEV PX4_SPIDEV_EXTERNAL1_1
-#elif defined PX4_SPIDEV_EXTERNAL   // fmu-v4 extspi
-# define PAW3902_SPIDEV PX4_SPIDEV_EXTERNAL
-#else
-# error "add the required spi dev from board_config.h here"
-#endif
-
-#define PAW3902_SPI_BUS_SPEED (2000000L) // 2MHz
-
-#define DIR_WRITE(a) ((a) | (1 << 7))
-#define DIR_READ(a) ((a) & 0x7f)
 
 using namespace time_literals;
 using namespace PixArt_PAW3902JF;
 
-// PAW3902JF-TXQT is PixArt Imaging
+#define DIR_WRITE(a) ((a) | (1 << 7))
+#define DIR_READ(a) ((a) & 0x7f)
 
-class PAW3902 : public device::SPI, public px4::ScheduledWorkItem
+class PAW3902 : public device::SPI, public I2CSPIDriver<PAW3902>
 {
 public:
-	PAW3902(int bus = PAW3902_BUS, enum Rotation yaw_rotation = ROTATION_NONE);
+	PAW3902(I2CSPIBusOption bus_option, int bus, int devid, int bus_frequency, spi_mode_e spi_mode,
+		spi_drdy_gpio_t drdy_gpio, float yaw_rotation_degrees = NAN);
 	virtual ~PAW3902();
 
-	virtual int init();
+	static I2CSPIDriverBase *instantiate(const BusCLIArguments &cli, const BusInstanceIterator &iterator,
+					     int runtime_instance);
+	static void print_usage();
 
-	void print_info();
+	int init() override;
 
-	void start();
-	void stop();
+	void print_status() override;
 
-protected:
-	virtual int probe();
+	void RunImpl();
 
 private:
+	void exit_and_cleanup() override;
 
-	void Run() override;
+	int probe() override;
 
-	uint8_t	registerRead(uint8_t reg);
-	void	registerWrite(uint8_t reg, uint8_t data);
+	static int DataReadyInterruptCallback(int irq, void *context, void *arg);
+	void DataReady();
+	bool DataReadyInterruptConfigure();
+	bool DataReadyInterruptDisable();
 
-	bool reset();
+	uint8_t	RegisterRead(uint8_t reg, int retries = 3);
+	void RegisterWrite(uint8_t reg, uint8_t data);
+	bool RegisterWriteVerified(uint8_t reg, uint8_t data, int retries = 5);
 
-	bool modeBright();
-	bool modeLowLight();
-	bool modeSuperLowLight();
+	void EnableLed();
 
-	bool changeMode(Mode newMode);
+	void ModeBright();
+	void ModeLowLight();
+	void ModeSuperLowLight();
+
+	bool ChangeMode(Mode newMode, bool force = false);
+
+	void ResetAccumulatedData();
 
 	uORB::PublicationMulti<optical_flow_s> _optical_flow_pub{ORB_ID(optical_flow)};
 
-	perf_counter_t	_sample_perf;
-	perf_counter_t	_comms_errors;
-	perf_counter_t	_dupe_count_perf;
+	perf_counter_t	_sample_perf{perf_alloc(PC_ELAPSED, MODULE_NAME": read")};
+	perf_counter_t	_interval_perf{perf_alloc(PC_INTERVAL, MODULE_NAME": interval")};
+	perf_counter_t	_comms_errors{perf_alloc(PC_COUNT, MODULE_NAME": com err")};
+	perf_counter_t	_false_motion_perf{perf_alloc(PC_COUNT, MODULE_NAME": false motion report")};
+	perf_counter_t	_register_write_fail_perf{perf_alloc(PC_COUNT, MODULE_NAME": verified register write failed")};
+	perf_counter_t	_mode_change_bright_perf{perf_alloc(PC_COUNT, MODULE_NAME": mode change bright (0)")};
+	perf_counter_t	_mode_change_low_light_perf{perf_alloc(PC_COUNT, MODULE_NAME": mode change low light (1)")};
+	perf_counter_t	_mode_change_super_low_light_perf{perf_alloc(PC_COUNT, MODULE_NAME": mode change super low light (2)")};
 
-	static constexpr uint64_t _collect_time{15000}; // 15 milliseconds, optical flow data publish rate
+	static constexpr uint64_t COLLECT_TIME{15000}; // 15 milliseconds, optical flow data publish rate
 
-	uint64_t	_previous_collect_timestamp{0};
-	uint64_t	_flow_dt_sum_usec{0};
-	unsigned	_frame_count_since_last{0};
+	const spi_drdy_gpio_t _drdy_gpio;
 
-	enum Rotation	_yaw_rotation {ROTATION_NONE};
+	uint64_t _previous_collect_timestamp{0};
+	uint64_t _flow_dt_sum_usec{0};
+	uint8_t _flow_sample_counter{0};
+	uint16_t _flow_quality_sum{0};
+
+	matrix::Dcmf	_rotation;
+
+	int             _discard_reading{3};
 
 	int		_flow_sum_x{0};
 	int		_flow_sum_y{0};
 
 	Mode		_mode{Mode::LowLight};
-
+	uint8_t 	_bright_to_low_counter{0};
+	uint8_t 	_low_to_superlow_counter{0};
+	uint8_t 	_low_to_bright_counter{0};
+	uint8_t 	_superlow_to_low_counter{0};
 };

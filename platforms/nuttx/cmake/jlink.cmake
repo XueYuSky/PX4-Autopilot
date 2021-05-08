@@ -31,28 +31,95 @@
 #
 ############################################################################
 
-add_custom_target(jlink_upload
-	COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/Debug/jlink_gdb_start.sh
-	COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/Debug/jlink_gdb_upload.sh $<TARGET_FILE:px4>
-	DEPENDS px4
-	WORKING_DIRECTORY ${PX4_BINARY_DIR}
-	USES_TERMINAL
+# jlink_upload (flash binary)
+find_program(JLinkGDBServerCLExe_PATH JLinkGDBServerCLExe
+	HINTS /Applications/SEGGER/JLink
+)
+if(JLinkGDBServerCLExe_PATH)
+	configure_file(${CMAKE_CURRENT_SOURCE_DIR}/Debug/jlink_gdb_start.sh.in ${PX4_BINARY_DIR}/jlink_gdb_start.sh @ONLY)
+	add_custom_target(jlink_upload
+		COMMAND ${PX4_BINARY_DIR}/jlink_gdb_start.sh
+		COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/Debug/upload_jlink_gdb.sh $<TARGET_FILE:px4>
+		DEPENDS
+			px4
+			${PX4_BINARY_DIR}/jlink_gdb_start.sh
+			${CMAKE_CURRENT_SOURCE_DIR}/Debug/upload_jlink_gdb.sh
+		WORKING_DIRECTORY ${PX4_BINARY_DIR}
+		USES_TERMINAL
 	)
+endif()
 
-add_custom_target(jlink_debug
-	COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/Debug/jlink_gdb_start.sh
-	COMMAND ${GDB} -nh
-		-iex 'set auto-load safe-path ${PX4_BINARY_DIR}'
-		-ex 'target remote localhost:2331'
-		-ex 'monitor reset 0'
-		-ex 'load'
-		-ex 'compare-sections'
-		-ex 'monitor reset 0'
-		-ex 'monitor sleep 1000'
-		-ex 'monitor go'
-		-ex 'continue'
-		$<TARGET_FILE:px4>
-	DEPENDS px4 ${PX4_BINARY_DIR}/.gdbinit
-	WORKING_DIRECTORY ${PX4_BINARY_DIR}
-	USES_TERMINAL
+# jlink_debug_gdb (flash binary and run with gdb attached)
+find_program(JLinkGDBServerExe_PATH JLinkGDBServerExe
+	HINTS /Applications/SEGGER/JLink
+)
+if(JLinkGDBServerExe_PATH AND CMAKE_GDB)
+	configure_file(${CMAKE_CURRENT_SOURCE_DIR}/Debug/jlink_debug_gdb.sh.in ${PX4_BINARY_DIR}/jlink_debug_gdb.sh @ONLY)
+	add_custom_target(jlink_debug_gdb
+		COMMAND ${PX4_BINARY_DIR}/jlink_debug_gdb.sh
+		DEPENDS
+			px4
+			${PX4_BINARY_DIR}/.gdbinit
+			${PX4_BINARY_DIR}/jlink_debug_gdb.sh
+		WORKING_DIRECTORY ${PX4_BINARY_DIR}
+		USES_TERMINAL
 	)
+endif()
+
+# jlink_debug_ozone (run Segger Ozone debugger with current target configuration)
+find_program(Ozone_PATH Ozone
+	HINTS /Applications/Ozone.app/Contents/MacOS/
+)
+if(Ozone_PATH)
+	configure_file(${CMAKE_CURRENT_SOURCE_DIR}/Debug/jlink_debug_ozone.sh.in ${PX4_BINARY_DIR}/jlink_debug_ozone.sh @ONLY)
+	add_custom_target(jlink_debug_ozone
+		COMMAND ${PX4_BINARY_DIR}/jlink_debug_ozone.sh
+		DEPENDS
+			px4
+			${PX4_BINARY_DIR}/jlink_debug_ozone.sh
+		WORKING_DIRECTORY ${PX4_BINARY_DIR}
+		USES_TERMINAL
+	)
+endif()
+
+if(bootloader_bin OR (EXISTS "${PX4_BOARD_DIR}/bootloader/${PX4_BOARD_VENDOR}_${PX4_BOARD_MODEL}_bootloader.bin"))
+	# jlink_flash_bootloader
+	find_program(JLinkExe_PATH JLinkExe)
+	if(JLinkExe_PATH)
+
+		if(bootloader_bin)
+			set(BOARD_BL_FIRMWARE_BIN ${bootloader_bin})
+		else()
+			set(BOARD_BL_FIRMWARE_BIN ${PX4_BOARD_DIR}/bootloader/${PX4_BOARD_VENDOR}_${PX4_BOARD_MODEL}_bootloader.bin)
+		endif()
+
+		configure_file(${CMAKE_CURRENT_SOURCE_DIR}/Debug/flash_bootloader.jlink.in ${PX4_BINARY_DIR}/flash_bootloader.jlink @ONLY)
+		add_custom_target(jlink_flash_bootloader
+			COMMAND ${JLinkExe_PATH} -CommandFile ${PX4_BINARY_DIR}/flash_bootloader.jlink
+			DEPENDS
+				px4
+				${CMAKE_CURRENT_SOURCE_DIR}/Debug/flash_bootloader.jlink.in
+			WORKING_DIRECTORY ${PX4_BINARY_DIR}
+			USES_TERMINAL
+		)
+	endif()
+endif()
+
+if(uavcan_bl_image_name)
+	# jlink_flash_bootloader
+	find_program(JLinkExe_PATH JLinkExe)
+	if(JLinkExe_PATH)
+		set(BOARD_FIRMWARE_BIN ${PX4_BINARY_DIR}/${uavcan_bl_image_name})
+		set(BOARD_FIRMWARE_APP_OFFSET "0x08010000")
+
+		configure_file(${PX4_SOURCE_DIR}/platforms/nuttx/Debug/flash_bin.jlink.in ${PX4_BINARY_DIR}/flash_bin.jlink @ONLY)
+		add_custom_target(jlink_flash_uavcan_bin
+			COMMAND ${JLinkExe_PATH} -CommandFile ${PX4_BINARY_DIR}/flash_bin.jlink
+			DEPENDS
+				${PX4_SOURCE_DIR}/platforms/nuttx/Debug/flash_bin.jlink.in
+				${PX4_BINARY_DIR}/${uavcan_bl_image_name}
+			WORKING_DIRECTORY ${PX4_BINARY_DIR}
+			USES_TERMINAL
+		)
+	endif()
+endif()

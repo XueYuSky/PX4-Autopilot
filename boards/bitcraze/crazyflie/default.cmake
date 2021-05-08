@@ -1,3 +1,5 @@
+# workaround for syslink parameter PARAM_DEFINE_INT32(SLNK_RADIO_ADDR2, 3890735079); // 0xE7E7E7E7
+add_compile_options(-Wno-narrowing)
 
 px4_add_board(
 	PLATFORM nuttx
@@ -5,49 +7,49 @@ px4_add_board(
 	MODEL crazyflie
 	TOOLCHAIN arm-none-eabi
 	ARCHITECTURE cortex-m4
+	CONSTRAINED_MEMORY
 	ROMFSROOT px4fmu_common
-
+	CONSTRAINED_FLASH
 	DRIVERS
 		barometer/lps25h
-		distance_sensor/vl53lxx
+		distance_sensor/vl53l0x
 		gps
-		imu/mpu9250
+		imu/invensense/mpu9250
+		magnetometer/akm/ak8963
 		optical_flow/pmw3901
-		px4fmu
-
+		pwm_out
 	MODULES
 		attitude_estimator_q
-		camera_feedback
+		#camera_feedback
 		commander
 		dataman
 		ekf2
 		events
-		#fw_att_control
-		#fw_pos_control_l1
-		#rover_pos_control
+		flight_mode_manager
+		gyro_fft
 		land_detector
-		landing_target_estimator
+		#landing_target_estimator
 		load_mon
-		local_position_estimator
+		#local_position_estimator
 		logger
 		mavlink
 		mc_att_control
+		mc_hover_thrust_estimator
 		mc_pos_control
+		mc_rate_control
 		navigator
+		rc_update
 		sensors
-		sih
-		#vtol_att_control
-		airspeed_selector
-
+		#temperature_compensation
 	SYSTEMCMDS
-		bl_update
-		config
+		#bl_update
 		dmesg
 		dumpfile
-		esc_calib
+		#esc_calib
 		hardfault_log
 		i2cdetect
 		led_control
+		mft
 		mixer
 		motor_ramp
 		motor_test
@@ -59,13 +61,12 @@ px4_add_board(
 		reboot
 		reflect
 		sd_bench
-		shutdown
-		#tests # tests and test runner
+		system_time
 		top
 		topic_listener
 		tune_control
+		uorb
 		usb_connected
 		ver
 		work_queue
-
 	)

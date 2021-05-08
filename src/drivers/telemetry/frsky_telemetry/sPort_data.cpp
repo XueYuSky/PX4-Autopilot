@@ -53,7 +53,7 @@
 
 #include <uORB/Subscription.hpp>
 #include <uORB/topics/battery_status.h>
-#include <uORB/topics/sensor_combined.h>
+#include <uORB/topics/vehicle_acceleration.h>
 #include <uORB/topics/vehicle_air_data.h>
 #include <uORB/topics/vehicle_global_position.h>
 #include <uORB/topics/vehicle_local_position.h>
@@ -66,7 +66,7 @@
 
 struct s_port_subscription_data_s {
 	uORB::SubscriptionData<battery_status_s> battery_status_sub{ORB_ID(battery_status)};
-	uORB::SubscriptionData<sensor_combined_s> sensor_combined_sub{ORB_ID(sensor_combined)};
+	uORB::SubscriptionData<vehicle_acceleration_s> vehicle_acceleration_sub{ORB_ID(vehicle_acceleration)};
 	uORB::SubscriptionData<vehicle_air_data_s> vehicle_air_data_sub{ORB_ID(vehicle_air_data)};
 	uORB::SubscriptionData<vehicle_global_position_s> vehicle_global_position_sub{ORB_ID(vehicle_global_position)};
 	uORB::SubscriptionData<vehicle_gps_position_s> vehicle_gps_position_sub{ORB_ID(vehicle_gps_position)};
@@ -102,7 +102,7 @@ void sPort_deinit()
 void sPort_update_topics()
 {
 	s_port_subscription_data->battery_status_sub.update();
-	s_port_subscription_data->sensor_combined_sub.update();
+	s_port_subscription_data->vehicle_acceleration_sub.update();
 	s_port_subscription_data->vehicle_air_data_sub.update();
 	s_port_subscription_data->vehicle_global_position_sub.update();
 	s_port_subscription_data->vehicle_gps_position_sub.update();
@@ -204,10 +204,10 @@ void sPort_send_ALT(int uart)
 // verified scaling for "calculated" option
 void sPort_send_SPD(int uart)
 {
-	const vehicle_global_position_s &global_pos = s_port_subscription_data->vehicle_global_position_sub.get();
+	const vehicle_local_position_s &local_pos = s_port_subscription_data->vehicle_local_position_sub.get();
 
 	/* send data for A2 */
-	float speed  = sqrtf(global_pos.vel_n * global_pos.vel_n + global_pos.vel_e * global_pos.vel_e);
+	float speed = sqrtf(local_pos.vx * local_pos.vx + local_pos.vy * local_pos.vy);
 	uint32_t ispeed = (int)(10 * speed);
 	sPort_send_data(uart, SMARTPORT_ID_GPS_SPD, ispeed);
 }
@@ -265,7 +265,7 @@ void sPort_send_GPS_CRS(int uart)
 	/* send course */
 
 	/* convert to 30 bit signed magnitude degrees*6E5 with MSb = 1 and bit 30=sign */
-	int32_t iYaw = s_port_subscription_data->vehicle_local_position_sub.get().yaw * 18000.0f / M_PI_F;
+	int32_t iYaw = s_port_subscription_data->vehicle_local_position_sub.get().heading * 18000.0f / M_PI_F;
 
 	if (iYaw < 0) { iYaw += 36000; }
 
@@ -297,10 +297,10 @@ void sPort_send_GPS_TIME(int uart)
 
 void sPort_send_GPS_SPD(int uart)
 {
-	const vehicle_global_position_s &global_pos = s_port_subscription_data->vehicle_global_position_sub.get();
+	const vehicle_local_position_s &local_pos = s_port_subscription_data->vehicle_local_position_sub.get();
 
 	/* send 100 * knots */
-	float speed  = sqrtf(global_pos.vel_n * global_pos.vel_n + global_pos.vel_e * global_pos.vel_e);
+	float speed = sqrtf(local_pos.vx * local_pos.vx + local_pos.vy * local_pos.vy);
 	uint32_t ispeed = (int)(1944 * speed);
 	sPort_send_data(uart, SMARTPORT_ID_GPS_SPD, ispeed);
 }

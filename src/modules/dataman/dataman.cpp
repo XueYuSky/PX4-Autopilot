@@ -41,36 +41,23 @@
  * @author David Sidrane
  */
 
-#include <px4_config.h>
-#include <px4_defines.h>
-#include <px4_module.h>
-#include <px4_posix.h>
-#include <px4_tasks.h>
-#include <px4_getopt.h>
-#include <stdio.h>
-#include <stdbool.h>
-#include <stdlib.h>
-#include <errno.h>
-#include <fcntl.h>
-#include <systemlib/err.h>
-#include <queue.h>
-#include <string.h>
-#include <semaphore.h>
-#include <unistd.h>
+#include <px4_platform_common/px4_config.h>
+#include <px4_platform_common/defines.h>
+#include <px4_platform_common/module.h>
+#include <px4_platform_common/posix.h>
+#include <px4_platform_common/tasks.h>
+#include <px4_platform_common/getopt.h>
 #include <drivers/drv_hrt.h>
+#include <lib/parameters/param.h>
+#include <lib/perf/perf_counter.h>
 
 #include "dataman.h"
-#include <parameters/param.h>
-
-#if defined(FLASH_BASED_DATAMAN)
-#include <nuttx/clock.h>
-#include <nuttx/progmem.h>
-#endif
-
 
 __BEGIN_DECLS
 __EXPORT int dataman_main(int argc, char *argv[]);
 __END_DECLS
+
+static constexpr int TASK_STACK_SIZE = 1220;
 
 /* Private File based Operations */
 static ssize_t _file_write(dm_item_t item, unsigned index, dm_persitence_t persistence, const void *buf,
@@ -89,20 +76,6 @@ static int  _ram_clear(dm_item_t item);
 static int  _ram_restart(dm_reset_reason reason);
 static int _ram_initialize(unsigned max_offset);
 static void _ram_shutdown();
-
-#if defined(FLASH_BASED_DATAMAN)
-/* Private Ram_Flash based Operations */
-#define RAM_FLASH_FLUSH_TIMEOUT_USEC USEC_PER_SEC
-
-static ssize_t _ram_flash_write(dm_item_t item, unsigned index, dm_persitence_t persistence, const void *buf,
-				size_t count);
-static ssize_t _ram_flash_read(dm_item_t item, unsigned index, void *buf, size_t count);
-static int  _ram_flash_clear(dm_item_t item);
-static int  _ram_flash_restart(dm_reset_reason reason);
-static int _ram_flash_initialize(unsigned max_offset);
-static void _ram_flash_shutdown();
-static int _ram_flash_wait(px4_sem_t *sem);
-#endif
 
 typedef struct dm_operations_t {
 	ssize_t (*write)(dm_item_t item, unsigned index, dm_persitence_t persistence, const void *buf, size_t count);
@@ -134,18 +107,6 @@ static constexpr dm_operations_t dm_ram_operations = {
 	.wait = px4_sem_wait,
 };
 
-#if defined(FLASH_BASED_DATAMAN)
-static constexpr dm_operations_t dm_ram_flash_operations = {
-	.write   = _ram_flash_write,
-	.read    = _ram_flash_read,
-	.clear   = _ram_flash_clear,
-	.restart = _ram_flash_restart,
-	.initialize = _ram_flash_initialize,
-	.shutdown = _ram_flash_shutdown,
-	.wait = _ram_flash_wait,
-};
-#endif
-
 static const dm_operations_t *g_dm_ops;
 
 static struct {
@@ -157,14 +118,6 @@ static struct {
 			uint8_t *data;
 			uint8_t *data_end;
 		} ram;
-#if defined(FLASH_BASED_DATAMAN)
-		struct {
-			uint8_t *data;
-			uint8_t *data_end;
-			/* sync above with RAM backend */
-			hrt_abstime flush_timeout_usec;
-		} ram_flash;
-#endif
 	};
 	bool running;
 } dm_operations_data;
@@ -228,7 +181,7 @@ static const unsigned g_per_item_max_index[DM_KEY_NUM_KEYS] = {
 
 /* Table of the len of each item type */
 static constexpr size_t g_per_item_size[DM_KEY_NUM_KEYS] = {
-	sizeof(struct mission_save_point_s) + DM_SECTOR_HDR_SIZE,
+	sizeof(struct mission_safe_point_s) + DM_SECTOR_HDR_SIZE,
 	sizeof(struct mission_fence_point_s) + DM_SECTOR_HDR_SIZE,
 	sizeof(struct mission_item_s) + DM_SECTOR_HDR_SIZE,
 	sizeof(struct mission_item_s) + DM_SECTOR_HDR_SIZE,
@@ -245,21 +198,17 @@ static px4_sem_t *g_item_locks[DM_KEY_NUM_KEYS];
 static px4_sem_t g_sys_state_mutex_mission;
 static px4_sem_t g_sys_state_mutex_fence;
 
+static perf_counter_t _dm_read_perf{nullptr};
+static perf_counter_t _dm_write_perf{nullptr};
+
 /* The data manager store file handle and file name */
 static const char *default_device_path = PX4_STORAGEDIR "/dataman";
 static char *k_data_manager_device_path = nullptr;
-
-#if defined(FLASH_BASED_DATAMAN)
-static const dm_sector_descriptor_t *k_dataman_flash_sector = nullptr;
-#endif
 
 static enum {
 	BACKEND_NONE = 0,
 	BACKEND_FILE,
 	BACKEND_RAM,
-#if defined(FLASH_BASED_DATAMAN)
-	BACKEND_RAM_FLASH,
-#endif
 	BACKEND_LAST
 } backend = BACKEND_NONE;
 
@@ -536,30 +485,6 @@ _file_write(dm_item_t item, unsigned index, dm_persitence_t persistence, const v
 	return count - DM_SECTOR_HDR_SIZE;
 }
 
-#if defined(FLASH_BASED_DATAMAN)
-static void
-_ram_flash_update_flush_timeout()
-{
-	dm_operations_data.ram_flash.flush_timeout_usec = hrt_absolute_time() + RAM_FLASH_FLUSH_TIMEOUT_USEC;
-}
-
-static ssize_t
-_ram_flash_write(dm_item_t item, unsigned index, dm_persitence_t persistence, const void *buf, size_t count)
-{
-	ssize_t ret = dm_ram_operations.write(item, index, persistence, buf, count);
-
-	if (ret < 1) {
-		return ret;
-	}
-
-	if (persistence == DM_PERSIST_POWER_ON_RESET) {
-		_ram_flash_update_flush_timeout();
-	}
-
-	return ret;
-}
-#endif
-
 /* Retrieve from the data manager RAM buffer*/
 static ssize_t _ram_read(dm_item_t item, unsigned index, void *buf, size_t count)
 {
@@ -654,14 +579,6 @@ _file_read(dm_item_t item, unsigned index, void *buf, size_t count)
 	return buffer[0];
 }
 
-#if defined(FLASH_BASED_DATAMAN)
-static ssize_t
-_ram_flash_read(dm_item_t item, unsigned index, void *buf, size_t count)
-{
-	return dm_ram_operations.read(item, index, buf, count);
-}
-#endif
-
 static int  _ram_clear(dm_item_t item)
 {
 	int i;
@@ -740,21 +657,6 @@ _file_clear(dm_item_t item)
 	fsync(dm_operations_data.file.fd);
 	return result;
 }
-
-#if defined(FLASH_BASED_DATAMAN)
-static int
-_ram_flash_clear(dm_item_t item)
-{
-	ssize_t ret = dm_ram_operations.clear(item);
-
-	if (ret < 0) {
-		return ret;
-	}
-
-	_ram_flash_update_flush_timeout();
-	return ret;
-}
-#endif
 
 /* Tell the data manager about the type of the last reset */
 static int  _ram_restart(dm_reset_reason reason)
@@ -868,14 +770,6 @@ _file_restart(dm_reset_reason reason)
 	return result;
 }
 
-#if defined(FLASH_BASED_DATAMAN)
-static int
-_ram_flash_restart(dm_reset_reason reason)
-{
-	return dm_ram_operations.restart(reason);
-}
-#endif
-
 static int
 _file_initialize(unsigned max_offset)
 {
@@ -952,44 +846,6 @@ _ram_initialize(unsigned max_offset)
 	return 0;
 }
 
-#if defined(FLASH_BASED_DATAMAN)
-static int
-_ram_flash_initialize(unsigned max_offset)
-{
-	if (max_offset & 1) {
-		/* STM32 flash API requires half-word(2 bytes) access */
-		max_offset++;
-	}
-
-	if (max_offset > k_dataman_flash_sector->size) {
-		PX4_WARN("Could not allocate %d bytes of flash memory", max_offset);
-		return -1;
-	}
-
-	ssize_t ret = dm_ram_operations.initialize(max_offset);
-
-	if (ret != 0) {
-		return ret;
-	}
-
-	/* Copy flash to RAM */
-	memcpy(dm_operations_data.ram_flash.data, (void *)k_dataman_flash_sector->address, max_offset);
-
-	struct dataman_compat_s compat_state;
-	ret = g_dm_ops->read(DM_KEY_COMPAT, 0, &compat_state, sizeof(compat_state));
-
-	if (ret != sizeof(compat_state) || compat_state.key != DM_COMPAT_KEY) {
-		/* Not compatible: clear RAM and write DM_KEY_COMPAT(it will flush flash) */
-		memset(dm_operations_data.ram_flash.data, 0, max_offset);
-
-		compat_state.key = DM_COMPAT_KEY;
-		ret = g_dm_ops->write(DM_KEY_COMPAT, 0, DM_PERSIST_POWER_ON_RESET, &compat_state, sizeof(compat_state));
-	}
-
-	return ret > 0 ? 0 : -1;
-}
-#endif
-
 static void
 _file_shutdown()
 {
@@ -1004,76 +860,6 @@ _ram_shutdown()
 	dm_operations_data.running = false;
 }
 
-#if defined(FLASH_BASED_DATAMAN)
-static void
-_ram_flash_flush()
-{
-	/*
-	 * reseting flush_timeout_usec even in errors cases to avoid looping
-	 * forever in case of flash failure.
-	 */
-	dm_operations_data.ram_flash.flush_timeout_usec = 0;
-
-	ssize_t ret = up_progmem_getpage(k_dataman_flash_sector->address);
-	ret = up_progmem_eraseblock(ret);
-
-	if (ret < 0) {
-		PX4_WARN("Error erasing flash sector %u", k_dataman_flash_sector->page);
-		return;
-	}
-
-	const ssize_t len = (dm_operations_data.ram_flash.data_end - dm_operations_data.ram_flash.data) + 1;
-	ret = up_progmem_write(k_dataman_flash_sector->address, dm_operations_data.ram_flash.data, len);
-
-	if (ret < len) {
-		PX4_WARN("Error writing to flash sector %u, error: %i", k_dataman_flash_sector->page, ret);
-		return;
-	}
-}
-
-static void
-_ram_flash_shutdown()
-{
-	if (dm_operations_data.ram_flash.flush_timeout_usec) {
-		_ram_flash_flush();
-	}
-
-	dm_ram_operations.shutdown();
-}
-
-static int
-_ram_flash_wait(px4_sem_t *sem)
-{
-	if (!dm_operations_data.ram_flash.flush_timeout_usec) {
-		px4_sem_wait(sem);
-		return 0;
-	}
-
-	const uint64_t now = hrt_absolute_time();
-
-	if (now >= dm_operations_data.ram_flash.flush_timeout_usec) {
-		_ram_flash_flush();
-		return 0;
-	}
-
-	const uint64_t diff = dm_operations_data.ram_flash.flush_timeout_usec - now;
-	struct timespec abstime;
-	abstime.tv_sec = diff / USEC_PER_SEC;
-	// FIXME: this could be made more performant.
-	abstime.tv_nsec = (diff % USEC_PER_SEC) * NSEC_PER_USEC;
-
-	px4_sem_timedwait(sem, &abstime);
-
-	if (hrt_absolute_time() < dm_operations_data.ram_flash.flush_timeout_usec) {
-		/* a work was queued before timeout */
-		return 0;
-	}
-
-	_ram_flash_flush();
-	return 0;
-}
-#endif
-
 /** Write to the data manager file */
 __EXPORT ssize_t
 dm_write(dm_item_t item, unsigned index, dm_persitence_t persistence, const void *buf, size_t count)
@@ -1085,8 +871,11 @@ dm_write(dm_item_t item, unsigned index, dm_persitence_t persistence, const void
 		return -1;
 	}
 
+	perf_begin(_dm_write_perf);
+
 	/* get a work item and queue up a write request */
 	if ((work = create_work_item()) == nullptr) {
+		perf_end(_dm_write_perf);
 		return -1;
 	}
 
@@ -1098,7 +887,9 @@ dm_write(dm_item_t item, unsigned index, dm_persitence_t persistence, const void
 	work->write_params.count = count;
 
 	/* Enqueue the item on the work queue and wait for the worker thread to complete processing it */
-	return (ssize_t)enqueue_work_item_and_wait_for_result(work);
+	ssize_t ret = (ssize_t)enqueue_work_item_and_wait_for_result(work);
+	perf_end(_dm_write_perf);
+	return ret;
 }
 
 /** Retrieve from the data manager file */
@@ -1112,8 +903,11 @@ dm_read(dm_item_t item, unsigned index, void *buf, size_t count)
 		return -1;
 	}
 
+	perf_begin(_dm_read_perf);
+
 	/* get a work item and queue up a read request */
 	if ((work = create_work_item()) == nullptr) {
+		perf_end(_dm_read_perf);
 		return -1;
 	}
 
@@ -1124,7 +918,9 @@ dm_read(dm_item_t item, unsigned index, void *buf, size_t count)
 	work->read_params.count = count;
 
 	/* Enqueue the item on the work queue and wait for the worker thread to complete processing it */
-	return (ssize_t)enqueue_work_item_and_wait_for_result(work);
+	ssize_t ret = (ssize_t)enqueue_work_item_and_wait_for_result(work);
+	perf_end(_dm_read_perf);
+	return ret;
 }
 
 /** Clear a data Item */
@@ -1235,15 +1031,6 @@ dm_restart(dm_reset_reason reason)
 	return enqueue_work_item_and_wait_for_result(work);
 }
 
-#if defined(FLASH_BASED_DATAMAN)
-__EXPORT int
-dm_flash_sector_description_set(const dm_sector_descriptor_t *description)
-{
-	k_dataman_flash_sector = description;
-	return 0;
-}
-#endif
-
 static int
 task_main(int argc, char *argv[])
 {
@@ -1256,13 +1043,6 @@ task_main(int argc, char *argv[])
 	case BACKEND_RAM:
 		g_dm_ops = &dm_ram_operations;
 		break;
-
-#if defined(FLASH_BASED_DATAMAN)
-
-	case BACKEND_RAM_FLASH:
-		g_dm_ops = &dm_ram_flash_operations;
-		break;
-#endif
 
 	default:
 		PX4_WARN("No valid backend set.");
@@ -1307,6 +1087,9 @@ task_main(int argc, char *argv[])
 
 	px4_sem_setprotocol(&g_work_queued_sema, SEM_PRIO_NONE);
 
+	_dm_read_perf = perf_alloc(PC_ELAPSED, MODULE_NAME": read");
+	_dm_write_perf = perf_alloc(PC_ELAPSED, MODULE_NAME": write");
+
 	/* see if we need to erase any items based on restart type */
 	int sys_restart_val;
 
@@ -1343,14 +1126,6 @@ task_main(int argc, char *argv[])
 		PX4_INFO("%s, data manager RAM size is %d bytes",
 			 restart_type_str, max_offset);
 		break;
-
-#if defined(FLASH_BASED_DATAMAN)
-
-	case BACKEND_RAM_FLASH:
-		PX4_INFO("%s, data manager RAM/Flash size is %d bytes",
-			 restart_type_str, max_offset);
-		break;
-#endif
 
 	default:
 		break;
@@ -1433,6 +1208,12 @@ end:
 	px4_sem_destroy(&g_sys_state_mutex_mission);
 	px4_sem_destroy(&g_sys_state_mutex_fence);
 
+	perf_free(_dm_read_perf);
+	_dm_read_perf = nullptr;
+
+	perf_free(_dm_write_perf);
+	_dm_write_perf = nullptr;
+
 	return 0;
 }
 
@@ -1448,7 +1229,8 @@ start()
 	px4_sem_setprotocol(&g_init_sema, SEM_PRIO_NONE);
 
 	/* start the worker thread with low priority for disk IO */
-	if ((task = px4_task_spawn_cmd("dataman", SCHED_DEFAULT, SCHED_PRIORITY_DEFAULT - 10, 1200, task_main, nullptr)) < 0) {
+	if ((task = px4_task_spawn_cmd("dataman", SCHED_DEFAULT, SCHED_PRIORITY_DEFAULT - 10, TASK_STACK_SIZE, task_main,
+				       nullptr)) < 0) {
 		px4_sem_destroy(&g_init_sema);
 		PX4_ERR("task start failed");
 		return -1;
@@ -1470,6 +1252,8 @@ status()
 	PX4_INFO("Clears   %d", g_func_counts[dm_clear_func]);
 	PX4_INFO("Restarts %d", g_func_counts[dm_restart_func]);
 	PX4_INFO("Max Q lengths work %d, free %d", g_work_q.max_size, g_free_q.max_size);
+	perf_print_counter(_dm_read_perf);
+	perf_print_counter(_dm_write_perf);
 }
 
 static void
@@ -1489,8 +1273,6 @@ usage()
 Module to provide persistent storage for the rest of the system in form of a simple database through a C API.
 Multiple backends are supported:
 - a file (eg. on the SD card)
-- FLASH (if the board supports it)
-- FRAM
 - RAM (this is obviously not persistent)
 
 It is used to store structured data of different types: mission waypoints, mission state and geofence polygons.
@@ -1511,8 +1293,7 @@ check for geofence violations.
 	PRINT_MODULE_USAGE_COMMAND("start");
 	PRINT_MODULE_USAGE_PARAM_STRING('f', nullptr, "<file>", "Storage file", true);
 	PRINT_MODULE_USAGE_PARAM_FLAG('r', "Use RAM backend (NOT persistent)", true);
-	PRINT_MODULE_USAGE_PARAM_FLAG('i', "Use FLASH backend", true);
-	PRINT_MODULE_USAGE_PARAM_COMMENT("The options -f, -r and -i are mutually exclusive. If nothing is specified, a file 'dataman' is used");
+	PRINT_MODULE_USAGE_PARAM_COMMENT("The options -f and -r are mutually exclusive. If nothing is specified, a file 'dataman' is used");
 
 	PRINT_MODULE_USAGE_COMMAND_DESCR("poweronrestart", "Restart dataman (on power on)");
 	PRINT_MODULE_USAGE_COMMAND_DESCR("inflightrestart", "Restart dataman (in flight)");
@@ -1522,7 +1303,7 @@ check for geofence violations.
 static int backend_check()
 {
 	if (backend != BACKEND_NONE) {
-		PX4_WARN("-f, -r and -i are mutually exclusive");
+		PX4_WARN("-f and -r are mutually exclusive");
 		usage();
 		return -1;
 	}
@@ -1551,7 +1332,7 @@ dataman_main(int argc, char *argv[])
 
 		/* jump over start and look at options first */
 
-		while ((ch = px4_getopt(argc, argv, "f:ri", &dmoptind, &dmoptarg)) != EOF) {
+		while ((ch = px4_getopt(argc, argv, "f:r", &dmoptind, &dmoptarg)) != EOF) {
 			switch (ch) {
 			case 'f':
 				if (backend_check()) {
@@ -1570,24 +1351,6 @@ dataman_main(int argc, char *argv[])
 
 				backend = BACKEND_RAM;
 				break;
-
-			case 'i':
-#if defined(FLASH_BASED_DATAMAN)
-				if (backend_check()) {
-					return -1;
-				}
-
-				if (!k_dataman_flash_sector) {
-					PX4_WARN("No flash sector set");
-					return -1;
-				}
-
-				backend = BACKEND_RAM_FLASH;
-				break;
-#else
-				PX4_WARN("RAM/Flash backend is not available");
-				return -1;
-#endif
 
 			//no break
 			default:

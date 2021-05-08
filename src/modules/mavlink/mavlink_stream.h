@@ -42,7 +42,7 @@
 #define MAVLINK_STREAM_H_
 
 #include <drivers/drv_hrt.h>
-#include <px4_module_params.h>
+#include <px4_platform_common/module_params.h>
 #include <containers/List.hpp>
 
 class Mavlink;
@@ -93,6 +93,15 @@ public:
 	virtual unsigned get_size() = 0;
 
 	/**
+	 * This function is called in response to a MAV_CMD_REQUEST_MESSAGE command.
+	 */
+	virtual bool request_message(float param2 = 0.0, float param3 = 0.0, float param4 = 0.0,
+				     float param5 = 0.0, float param6 = 0.0, float param7 = 0.0)
+	{
+		return send();
+	}
+
+	/**
 	 * Get the average message size
 	 *
 	 * For a normal stream this equals the message size,
@@ -117,7 +126,7 @@ protected:
 	Mavlink      *const _mavlink;
 	int _interval{1000000};		///< if set to negative value = unlimited rate
 
-	virtual bool send(const hrt_abstime t) = 0;
+	virtual bool send() = 0;
 
 	/**
 	 * Function to collect/update data for the streams at a high rate independant of

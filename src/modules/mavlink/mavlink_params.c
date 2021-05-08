@@ -59,18 +59,18 @@ PARAM_DEFINE_INT32(MAV_COMP_ID, 1);
 PARAM_DEFINE_INT32(MAV_PROTO_VER, 0);
 
 /**
- * MAVLink Radio ID
+ * MAVLink SiK Radio ID
  *
  * When non-zero the MAVLink app will attempt to configure the
- * radio to this ID and re-set the parameter to 0. If the value
+ * SiK radio to this ID and re-set the parameter to 0. If the value
  * is negative it will reset the complete radio config to
- * factory defaults.
+ * factory defaults. Only applies if this mavlink instance is going through a SiK radio
  *
  * @group MAVLink
  * @min -1
  * @max 240
  */
-PARAM_DEFINE_INT32(MAV_RADIO_ID, 0);
+PARAM_DEFINE_INT32(MAV_SIK_RADIO_ID, 0);
 
 /**
  * MAVLink airframe type
@@ -131,19 +131,6 @@ PARAM_DEFINE_INT32(MAV_USEHILGPS, 0);
 PARAM_DEFINE_INT32(MAV_FWDEXTSP, 1);
 
 /**
- * Broadcast heartbeats on local network
- *
- * This allows a ground control station to automatically find the drone
- * on the local network.
- *
- * @value 0 Never broadcast
- * @value 1 Always broadcast
- * @value 2 Only multicast
- * @group MAVLink
- */
-PARAM_DEFINE_INT32(MAV_BROADCAST, 0);
-
-/**
  * Parameter hash check.
  *
  * Disabling the parameter hash check functionality will make the mavlink instance
@@ -175,3 +162,17 @@ PARAM_DEFINE_INT32(MAV_HB_FORW_EN, 1);
  * @group MAVLink
  */
 PARAM_DEFINE_INT32(MAV_ODOM_LP, 0);
+
+/**
+ * Timeout in seconds for the RADIO_STATUS reports coming in
+ *
+ * If the connected radio stops reporting RADIO_STATUS for a certain time,
+ * a warning is triggered and, if MAV_X_RADIO_CTL is enabled, the software-flow
+ * control is reset.
+ *
+ * @group MAVLink
+ * @unit s
+ * @min 1
+ * @max 250
+ */
+PARAM_DEFINE_INT32(MAV_RADIO_TOUT, 5);

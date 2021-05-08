@@ -113,7 +113,7 @@ include(px4_parse_function_args)
 include(px4_git)
 
 execute_process(
-	COMMAND git describe --always --tags
+	COMMAND git describe --exclude ext/* --always --tags
 	OUTPUT_VARIABLE PX4_GIT_TAG
 	OUTPUT_STRIP_TRAILING_WHITESPACE
 	WORKING_DIRECTORY ${PX4_SOURCE_DIR}
@@ -138,7 +138,6 @@ set(CONFIG "px4_sitl_default" CACHE STRING "desired configuration")
 
 include(px4_add_module)
 set(config_module_list)
-set(config_df_driver_list)
 
 include(px4_config)
 include(px4_add_board)
@@ -146,17 +145,19 @@ include(${PX4_CONFIG_FILE})
 message(STATUS "PX4 config: ${PX4_CONFIG}")
 message(STATUS "PX4 platform: ${PX4_PLATFORM}")
 
-if (ENABLE_LOCKSTEP_SCHEDULER)
-	add_definitions(-DENABLE_LOCKSTEP_SCHEDULER)
-	message(STATUS "PX4 lockstep: enabled")
-else()
-	message(STATUS "PX4 lockstep: disabled")
+if(${PX4_PLATFORM} STREQUAL "posix")
+	if(ENABLE_LOCKSTEP_SCHEDULER)
+		add_definitions(-DENABLE_LOCKSTEP_SCHEDULER)
+		message(STATUS "PX4 lockstep: enabled")
+	else()
+		message(STATUS "PX4 lockstep: disabled")
+	endif()
 endif()
 
 # external modules
 set(EXTERNAL_MODULES_LOCATION "" CACHE STRING "External modules source location")
 
-if (NOT EXTERNAL_MODULES_LOCATION STREQUAL "")
+if(NOT EXTERNAL_MODULES_LOCATION STREQUAL "")
 	get_filename_component(EXTERNAL_MODULES_LOCATION "${EXTERNAL_MODULES_LOCATION}" ABSOLUTE)
 endif()
 
@@ -170,14 +171,28 @@ if(EXISTS "${PX4_SOURCE_DIR}/platforms/${PX4_PLATFORM}/cmake/init.cmake")
 endif()
 
 # CMake build type (Debug Release RelWithDebInfo MinSizeRel Coverage)
-if (NOT CMAKE_BUILD_TYPE)
-	if (${PX4_PLATFORM} STREQUAL "nuttx")
+if(NOT CMAKE_BUILD_TYPE)
+	if(${PX4_PLATFORM} STREQUAL "nuttx")
 		set(PX4_BUILD_TYPE "MinSizeRel")
 	else()
 		set(PX4_BUILD_TYPE "RelWithDebInfo")
 	endif()
 
 	set(CMAKE_BUILD_TYPE ${PX4_BUILD_TYPE} CACHE STRING "Build type" FORCE)
+endif()
+
+if((CMAKE_BUILD_TYPE STREQUAL "Debug") OR (CMAKE_BUILD_TYPE STREQUAL "Coverage"))
+	set(MAX_CUSTOM_OPT_LEVEL -O0)
+elseif(CMAKE_BUILD_TYPE MATCHES "Sanitizer")
+	set(MAX_CUSTOM_OPT_LEVEL -O1)
+elseif(CMAKE_BUILD_TYPE MATCHES "Release")
+	set(MAX_CUSTOM_OPT_LEVEL -O3)
+else()
+	if(px4_constrained_flash_build)
+		set(MAX_CUSTOM_OPT_LEVEL -Os)
+	else()
+		set(MAX_CUSTOM_OPT_LEVEL -O2)
+	endif()
 endif()
 
 set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS "Debug;Release;RelWithDebInfo;MinSizeRel;Coverage;AddressSanitizer;UndefinedBehaviorSanitizer")
@@ -190,7 +205,7 @@ project(px4 CXX C ASM)
 
 set(package-contact "px4users@googlegroups.com")
 
-set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
@@ -208,28 +223,29 @@ endif()
 
 #=============================================================================
 
-# gold linker - use if available
-include(CMakeDependentOption)
-CMAKE_DEPENDENT_OPTION(USE_LD_GOLD
-                      "Use GNU gold linker" ON
-                      "NOT WIN32;NOT APPLE" OFF
-)
+# gold linker - use if available (posix only for now)
+if(${PX4_PLATFORM} STREQUAL "posix")
+	include(CMakeDependentOption)
+	CMAKE_DEPENDENT_OPTION(USE_LD_GOLD
+			"Use GNU gold linker" ON
+			"NOT WIN32;NOT APPLE" OFF
+	)
 
-if(USE_LD_GOLD)
-	execute_process(COMMAND ${CMAKE_C_COMPILER} -fuse-ld=gold -Wl,--version ERROR_QUIET OUTPUT_VARIABLE LD_VERSION)
-	if("${LD_VERSION}" MATCHES "GNU gold")
-		set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fuse-ld=gold")
-		set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -fuse-ld=gold")
-	else()
-		set(USE_LD_GOLD OFF)
+	if(USE_LD_GOLD)
+		execute_process(COMMAND ${CMAKE_C_COMPILER} -fuse-ld=gold -Wl,--version ERROR_QUIET OUTPUT_VARIABLE LD_VERSION)
+		if("${LD_VERSION}" MATCHES "GNU gold")
+			set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fuse-ld=gold")
+			set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -fuse-ld=gold")
+		else()
+			set(USE_LD_GOLD OFF)
+		endif()
 	endif()
 endif()
 
 #=============================================================================
 
 # Setup install paths
-if (${PX4_PLATFORM} STREQUAL "posix")
-
+if(${PX4_PLATFORM} STREQUAL "posix")
 	# This makes it possible to dynamically load code which depends on symbols
 	# inside the px4 executable.
 	set(CMAKE_POSITION_INDEPENDENT_CODE ON)
@@ -263,17 +279,25 @@ if (CATKIN_DEVEL_PREFIX)
 	endif()
 endif()
 
-# python
-include(px4_find_python_module)
-find_package(PythonInterp REQUIRED)
+# Python
+# If using catkin, Python 2 is found since it points
+# to the Python libs installed with the ROS distro
+if (NOT CATKIN_DEVEL_PREFIX)
+	find_package(PythonInterp 3)
+	# We have a custom error message to tell users how to install python3.
+	if (NOT PYTHONINTERP_FOUND)
+		message(FATAL_ERROR "Python 3 not found. Please install Python 3:\n"
+			"    Ubuntu: sudo apt install python3 python3-dev python3-pip\n"
+			"    macOS: brew install python")
+	endif()
+else()
+	find_package(PythonInterp REQUIRED)
+endif()
 
 option(PYTHON_COVERAGE "Python code coverage" OFF)
 if(PYTHON_COVERAGE)
 	message(STATUS "python coverage enabled")
 	set(PYTHON_EXECUTABLE coverage run -p)
-else()
-	# run normally (broken under coveragepy)
-	px4_find_python_module(jinja2 REQUIRED)
 endif()
 
 #=============================================================================
@@ -295,6 +319,13 @@ px4_add_common_flags()
 px4_os_add_flags()
 
 #=============================================================================
+# board cmake init (optional)
+#
+if(EXISTS ${PX4_BOARD_DIR}/cmake/init.cmake)
+	include(${PX4_BOARD_DIR}/cmake/init.cmake)
+endif()
+
+#=============================================================================
 # message, and airframe generation
 #
 include(px4_metadata)
@@ -304,36 +335,19 @@ add_subdirectory(msg EXCLUDE_FROM_ALL)
 px4_generate_airframes_xml(BOARD ${PX4_BOARD})
 
 #=============================================================================
-# DriverFramework
-#
-px4_add_git_submodule(TARGET git_driverframework PATH "src/lib/DriverFramework")
-set(OS ${PX4_PLATFORM})
-add_subdirectory(src/lib/DriverFramework/framework)
-
-# List the DriverFramework drivers
-if (DEFINED config_df_driver_list)
-	message("DF Drivers: ${config_df_driver_list}")
-endif()
-
-set(df_driver_libs)
-foreach(driver ${config_df_driver_list})
-	add_subdirectory(src/lib/DriverFramework/drivers/${driver})
-	list(APPEND df_driver_libs df_${driver})
-	message("Adding DF driver: ${driver}")
-endforeach()
-
-#=============================================================================
 # external projects
 #
 set(ep_base ${PX4_BINARY_DIR}/external)
 set_property(DIRECTORY PROPERTY EP_BASE ${ep_base})
 
 # add external project install folders to build
-link_directories(${ep_base}/Install/lib)
-include_directories(${ep_base}/Install/include)
 # add the directories so cmake won't warn
-execute_process(COMMAND cmake -E make_directory ${ep_base}/Install/lib)
-execute_process(COMMAND cmake -E make_directory ${ep_base}/Install/include)
+execute_process(COMMAND ${CMAKE_COMMAND} -E make_directory ${ep_base})
+execute_process(COMMAND ${CMAKE_COMMAND} -E make_directory ${ep_base}/Install)
+execute_process(COMMAND ${CMAKE_COMMAND} -E make_directory ${ep_base}/Install/lib)
+link_directories(${ep_base}/Install/lib)
+execute_process(COMMAND ${CMAKE_COMMAND} -E make_directory ${ep_base}/Install/include)
+include_directories(${ep_base}/Install/include)
 
 #=============================================================================
 # external modules
@@ -355,7 +369,7 @@ endif()
 
 # optionally enable cmake testing (supported only on posix)
 option(CMAKE_TESTING "Configure test targets" OFF)
-if (${PX4_CONFIG} STREQUAL "px4_sitl_test")
+if(${PX4_CONFIG} STREQUAL "px4_sitl_test")
 	set(CMAKE_TESTING ON)
 endif()
 if(CMAKE_TESTING)
@@ -370,18 +384,19 @@ list(APPEND CMAKE_MODULE_PATH ${PX4_SOURCE_DIR}/cmake/gtest/)
 include(px4_add_gtest)
 if(BUILD_TESTING)
 	include(gtest)
+
+	add_custom_target(test_results
+			COMMAND GTEST_COLOR=1 ${CMAKE_CTEST_COMMAND} --output-on-failure -T Test -R ${TESTFILTER} USES_TERMINAL
+			DEPENDS
+				px4
+				examples__dyn_hello
+				test_mixer_multirotor
+			USES_TERMINAL
+			COMMENT "Running tests"
+			WORKING_DIRECTORY ${PX4_BINARY_DIR})
+	set_target_properties(test_results PROPERTIES EXCLUDE_FROM_ALL TRUE)
 endif()
 
-add_custom_target(test_results
-		COMMAND GTEST_COLOR=1 ${CMAKE_CTEST_COMMAND} --output-on-failure -T Test -R ${TESTFILTER} USES_TERMINAL
-		DEPENDS
-			px4
-			examples__dyn_hello
-			test_mixer_multirotor
-		USES_TERMINAL
-		COMMENT "Running tests"
-		WORKING_DIRECTORY ${PX4_BINARY_DIR})
-set_target_properties(test_results PROPERTIES EXCLUDE_FROM_ALL TRUE)
 
 #=============================================================================
 # subdirectories
@@ -393,8 +408,6 @@ add_subdirectory(src/lib EXCLUDE_FROM_ALL)
 
 add_subdirectory(platforms/${PX4_PLATFORM}/src/px4)
 add_subdirectory(platforms EXCLUDE_FROM_ALL)
-add_subdirectory(src/modules/uORB EXCLUDE_FROM_ALL) # TODO: platform layer
-add_subdirectory(src/drivers/boards EXCLUDE_FROM_ALL)
 
 if(EXISTS "${PX4_BOARD_DIR}/CMakeLists.txt")
 	add_subdirectory(${PX4_BOARD_DIR})
@@ -423,7 +436,7 @@ endforeach()
 
 add_custom_command(OUTPUT ${uorb_graph_config}
 	COMMAND ${PYTHON_EXECUTABLE} ${PX4_SOURCE_DIR}/Tools/uorb_graph/create.py
-		${module_list}
+		${graph_module_list}
 		--exclude-path src/examples
 		--file ${PX4_SOURCE_DIR}/Tools/uorb_graph/graph_${uorb_graph_config}
 	WORKING_DIRECTORY ${PX4_SOURCE_DIR}
@@ -443,3 +456,10 @@ add_custom_target(size
 	WORKING_DIRECTORY ${PX4_BINARY_DIR}
 	USES_TERMINAL
 	)
+
+# install python requirements using configured python
+add_custom_target(install_python_requirements
+	COMMAND ${PYTHON_EXECUTABLE} -m pip install --requirement ${PX4_SOURCE_DIR}/Tools/setup/requirements.txt
+	DEPENDS ${PX4_SOURCE_DIR}/Tools/setup/requirements.txt
+	USES_TERMINAL
+)

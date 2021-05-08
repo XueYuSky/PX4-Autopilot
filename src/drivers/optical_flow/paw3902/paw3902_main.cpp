@@ -1,6 +1,6 @@
 /****************************************************************************
  *
- *   Copyright (c) 2019 PX4 Development Team. All rights reserved.
+ *   Copyright (c) 2019-2020 PX4 Development Team. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -32,159 +32,80 @@
  ****************************************************************************/
 
 #include "PAW3902.hpp"
+#include <px4_platform_common/module.h>
 
-/**
- * Local functions in support of the shell command.
- */
-namespace pmw3902
+void PAW3902::print_usage()
 {
-
-PAW3902	*g_dev;
-
-void	start(int spi_bus);
-void	stop();
-void	test();
-void	reset();
-void	info();
-void	usage();
-
-
-/**
- * Start the driver.
- */
-void
-start(int spi_bus)
-{
-	if (g_dev != nullptr) {
-		errx(1, "already started");
-	}
-
-	/* create the driver */
-	g_dev = new PAW3902(spi_bus, (enum Rotation)0);
-
-	if (g_dev == nullptr) {
-		goto fail;
-	}
-
-	if (OK != g_dev->init()) {
-		goto fail;
-	}
-
-	exit(0);
-
-fail:
-
-	if (g_dev != nullptr) {
-		delete g_dev;
-		g_dev = nullptr;
-	}
-
-	errx(1, "driver start failed");
+	PRINT_MODULE_USAGE_NAME("paw3902", "driver");
+	PRINT_MODULE_USAGE_COMMAND("start");
+	PRINT_MODULE_USAGE_PARAMS_I2C_SPI_DRIVER(false, true);
+	PRINT_MODULE_USAGE_PARAM_INT('Y', 0, 0, 359, "custom yaw rotation (degrees)", true);
+	PRINT_MODULE_USAGE_DEFAULT_COMMANDS();
 }
 
-/**
- * Stop the driver
- */
-void stop()
+I2CSPIDriverBase *PAW3902::instantiate(const BusCLIArguments &cli, const BusInstanceIterator &iterator,
+				       int runtime_instance)
 {
-	if (g_dev != nullptr) {
-		delete g_dev;
-		g_dev = nullptr;
+	float yaw_rotation_degrees = NAN;
 
-	} else {
-		errx(1, "driver not running");
+	if (cli.custom1 >= 0) {
+		yaw_rotation_degrees = cli.custom1;
 	}
 
-	exit(0);
-}
+	PAW3902 *instance = new PAW3902(iterator.configuredBusOption(), iterator.bus(), iterator.devid(), cli.bus_frequency,
+					cli.spi_mode, iterator.DRDYGPIO(), yaw_rotation_degrees);
 
-/**
- * Print a little info about the driver.
- */
-void
-info()
-{
-	if (g_dev == nullptr) {
-		errx(1, "driver not running");
+	if (!instance) {
+		PX4_ERR("alloc failed");
+		return nullptr;
 	}
 
-	printf("state @ %p\n", g_dev);
-	g_dev->print_info();
-
-	exit(0);
-}
-
-/**
- * Print a little info about how to start/stop/use the driver
- */
-void usage()
-{
-	PX4_INFO("usage: pmw3902 {start|test|reset|info'}");
-	PX4_INFO("    [-b SPI_BUS]");
-}
-
-} // namespace pmw3902
-
-/*
- * Driver 'main' command.
- */
-extern "C" __EXPORT int paw3902_main(int argc, char *argv[]);
-
-int
-paw3902_main(int argc, char *argv[])
-{
-	if (argc < 2) {
-		pmw3902::usage();
-		return PX4_ERROR;
+	if (OK != instance->init()) {
+		delete instance;
+		return nullptr;
 	}
 
-	// don't exit from getopt loop to leave getopt global variables in consistent state,
-	// set error flag instead
-	bool err_flag = false;
-	int ch;
-	int myoptind = 1;
-	const char *myoptarg = nullptr;
-	int spi_bus = PAW3902_BUS;
+	return instance;
+}
 
-	while ((ch = px4_getopt(argc, argv, "b:", &myoptind, &myoptarg)) != EOF) {
+extern "C" __EXPORT int paw3902_main(int argc, char *argv[])
+{
+	int ch = 0;
+	using ThisDriver = PAW3902;
+	BusCLIArguments cli{false, true};
+	cli.custom1 = -1;
+	cli.spi_mode = SPIDEV_MODE0;
+	cli.default_spi_frequency = SPI_SPEED;
+
+	while ((ch = cli.getopt(argc, argv, "Y:")) != EOF) {
 		switch (ch) {
-		case 'b':
-			spi_bus = (uint8_t)atoi(myoptarg);
-
-			break;
-
-		default:
-			err_flag = true;
+		case 'Y':
+			cli.custom1 = atoi(cli.optarg());
 			break;
 		}
 	}
 
-	if (err_flag) {
-		pmw3902::usage();
-		return PX4_ERROR;
+	const char *verb = cli.optarg();
+
+	if (!verb) {
+		ThisDriver::print_usage();
+		return -1;
 	}
 
-	/*
-	 * Start/load the driver.
-	 */
-	if (!strcmp(argv[myoptind], "start")) {
-		pmw3902::start(spi_bus);
+	BusInstanceIterator iterator(MODULE_NAME, cli, DRV_FLOW_DEVTYPE_PAW3902);
+
+	if (!strcmp(verb, "start")) {
+		return ThisDriver::module_start(cli, iterator);
 	}
 
-	/*
-	 * Stop the driver
-	 */
-	if (!strcmp(argv[myoptind], "stop")) {
-		pmw3902::stop();
+	if (!strcmp(verb, "stop")) {
+		return ThisDriver::module_stop(iterator);
 	}
 
-	/*
-	 * Print driver information.
-	 */
-	if (!strcmp(argv[myoptind], "status")) {
-		pmw3902::info();
+	if (!strcmp(verb, "status")) {
+		return ThisDriver::module_status(iterator);
 	}
 
-	pmw3902::usage();
-	return PX4_ERROR;
+	ThisDriver::print_usage();
+	return -1;
 }

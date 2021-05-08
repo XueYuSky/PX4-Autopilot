@@ -33,34 +33,30 @@
 
 #pragma once
 
-#include <drivers/drv_baro.h>
 #include <drivers/drv_hrt.h>
-#include <lib/cdev/CDev.hpp>
 #include <lib/conversion/rotation.h>
 #include <uORB/uORB.h>
 #include <uORB/PublicationMulti.hpp>
 #include <uORB/topics/sensor_baro.h>
 
-class PX4Barometer : public cdev::CDev
+class PX4Barometer
 {
-
 public:
-	PX4Barometer(uint32_t device_id, uint8_t priority);
-	~PX4Barometer() override;
+	PX4Barometer(uint32_t device_id);
+	~PX4Barometer();
+
+	const sensor_baro_s &get() { return _sensor_baro_pub.get(); }
 
 	void set_device_type(uint8_t devtype);
 	void set_error_count(uint64_t error_count) { _sensor_baro_pub.get().error_count = error_count; }
 
 	void set_temperature(float temperature) { _sensor_baro_pub.get().temperature = temperature; }
 
-	void update(hrt_abstime timestamp, float pressure);
+	void update(const hrt_abstime &timestamp_sample, float pressure);
 
-	void print_status();
+	int get_instance() { return _sensor_baro_pub.get_instance(); };
 
 private:
 
-	uORB::PublicationMultiData<sensor_baro_s>	_sensor_baro_pub;
-
-	int			_class_device_instance{-1};
-
+	uORB::PublicationMultiData<sensor_baro_s> _sensor_baro_pub{ORB_ID(sensor_baro)};
 };

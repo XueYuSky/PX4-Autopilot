@@ -32,6 +32,7 @@
 ############################################################################
 
 add_subdirectory(failure_detector)
+add_subdirectory(Arming)
 
 px4_add_module(
 	MODULE modules__commander
@@ -40,28 +41,33 @@ px4_add_module(
 	SRCS
 		accelerometer_calibration.cpp
 		airspeed_calibration.cpp
-		arm_auth.cpp
-		baro_calibration.cpp
 		calibration_routines.cpp
 		Commander.cpp
 		commander_helper.cpp
 		esc_calibration.cpp
+		factory_calibration_storage.cpp
 		gyro_calibration.cpp
-		health_flag_helper.cpp
+		level_calibration.cpp
+		lm_fit.cpp
 		mag_calibration.cpp
-		PreflightCheck.cpp
+		ManualControl.cpp
 		rc_calibration.cpp
-		rc_check.cpp
 		state_machine_helper.cpp
+		worker_thread.cpp
 	DEPENDS
 		circuit_breaker
-		df_driver_framework
 		failure_detector
 		git_ecl
 		ecl_geo
 		hysteresis
+		PreFlightCheck
+		ArmAuthorization
+		HealthFlags
+		sensor_calibration
 	)
 
 if(PX4_TESTING)
 	add_subdirectory(commander_tests)
 endif()
+
+px4_add_unit_gtest(SRC mag_calibration_test.cpp LINKLIBS modules__commander)

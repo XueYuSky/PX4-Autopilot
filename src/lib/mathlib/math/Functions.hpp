@@ -41,15 +41,10 @@
 
 #include "Limits.hpp"
 
+#include <matrix/matrix/math.hpp>
+
 namespace math
 {
-
-// Type-safe signum function
-template<typename T>
-int sign(T val)
-{
-	return (T(FLT_EPSILON) < val) - (val < T(FLT_EPSILON));
-}
 
 // Type-safe signum function with zero treated as positive
 template<typename T>
@@ -114,7 +109,7 @@ const T deadzone(const T &value, const T &dz)
 	T x = constrain(value, (T) - 1, (T) 1);
 	T dzc = constrain(dz, (T) 0, (T) 0.99);
 	// Rescale the input such that we get a piecewise linear function that will be continuous with applied deadzone
-	T out = (x - sign(x) * dzc) / (1 - dzc);
+	T out = (x - matrix::sign(x) * dzc) / (1 - dzc);
 	// apply the deadzone (values zero around the middle)
 	return out * (fabsf(x) > dzc);
 }
@@ -153,56 +148,79 @@ const T gradual(const T &value, const T &x_low, const T &x_high, const T &y_low,
 }
 
 /*
- * Exponential function of the form Y_out = a*b^X + c
- *
- * Y_max    |   *
- *          |    *
- *          |      *
- *          |        *
- *          |           *
- * Y_middle |               *
- *          |                    *
- * Y_min    |                          *    *
- *          | __________________________________
- *              0           1               2
- *
- *
- * @param X in the range [0,2]
- * @param Y_min minimum output at X = 2
- * @param Y_mid middle output at X = 1
- * @param Y_max maximum output at X = 0
+ * Constant, linear, linear, constant function with the three corner points as parameters
+ *  y_high               -------
+ *                      /
+ *                    /
+ *  y_middle        /
+ *                /
+ *               /
+ *              /
+ * y_low -------
+ *         x_low x_middle x_high
  */
 template<typename T>
-const T expontialFromLimits(const T &X_in, const T &Y_min, const T &Y_mid, const T &Y_max)
+const T gradual3(const T &value,
+		 const T &x_low, const T &x_middle, const T &x_high,
+		 const T &y_low, const T &y_middle, const T &y_high)
 {
-	const T delta = (T)0.001;
-	// constrain X_in to the range of 0 and 2
-	T X = math::constrain(X_in, (T)0, (T)2);
-	// If Y_mid is exactly in the middle, then just apply linear approach.
-	bool use_linear_approach = false;
-
-	if (((Y_max + Y_min) * (T)0.5) - Y_mid < delta) {
-		use_linear_approach = true;
-	}
-
-	T Y_out;
-
-	if (use_linear_approach) {
-		// Y_out =  m*x+q
-		float slope = -(Y_max - Y_min) / (T)2.0;
-		Y_out = slope * X + Y_max;
+	if (value < x_middle) {
+		return gradual(value, x_low, x_middle, y_low, y_middle);
 
 	} else {
-		// Y_out = a*b^X + c with constraints Y_max = 0, Y_middle = 1, Y_min = 2
-		T a = -((Y_mid - Y_max) * (Y_mid - Y_max))
-		      / ((T)2.0 * Y_mid - Y_max - Y_min);
-		T c = Y_max - a;
-		T b = (Y_mid - c) / a;
-		Y_out = a * powf(b, X) + c;
+		return gradual(value, x_middle, x_high, y_middle, y_high);
 	}
-
-	// Y_out needs to be in between max and min
-	return constrain(Y_out, Y_min, Y_max);
-
 }
+
+/*
+ * Squareroot, linear function with fixed corner point at intersection (1,1)
+ *                     /
+ *      linear        /
+ *                   /
+ * 1                /
+ *                /
+ *      sqrt     |
+ *              |
+ * 0     -------
+ *             0    1
+ */
+template<typename T>
+const T sqrt_linear(const T &value)
+{
+	if (value < static_cast<T>(0)) {
+		return static_cast<T>(0);
+
+	} else if (value < static_cast<T>(1)) {
+		return sqrtf(value);
+
+	} else {
+		return value;
+	}
+}
+
+/*
+ * Linear interpolation between 2 points a, and b.
+ * s=0 return a
+ * s=1 returns b
+ * Any value for s is valid.
+ */
+template<typename T>
+const T lerp(const T &a, const T &b, const T &s)
+{
+	return (static_cast<T>(1) - s) * a + s * b;
+}
+
+template<typename T>
+constexpr T negate(T value)
+{
+	static_assert(sizeof(T) > 2, "implement for T");
+	return -value;
+}
+
+template<>
+constexpr int16_t negate<int16_t>(int16_t value)
+{
+	return (value == INT16_MIN) ? INT16_MAX : -value;
+}
+
 } /* namespace math */

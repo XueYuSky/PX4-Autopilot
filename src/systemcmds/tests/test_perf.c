@@ -36,8 +36,8 @@
  * Tests related to the performance counter.
  */
 
-#include <px4_config.h>
-#include <px4_posix.h>
+#include <px4_platform_common/px4_config.h>
+#include <px4_platform_common/posix.h>
 
 #include <perf/perf_counter.h>
 
@@ -64,8 +64,6 @@ test_perf(int argc, char *argv[])
 	perf_end(ec);
 	printf("perf: expect count of 1\n");
 	perf_print_counter(ec);
-	printf("perf: expect at least two counters\n");
-	perf_print_all(1);
 
 	perf_free(cc);
 	perf_free(ec);

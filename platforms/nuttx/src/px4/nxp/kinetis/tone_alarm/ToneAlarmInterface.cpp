@@ -35,15 +35,15 @@
  * @file ToneAlarmInterface.cpp
  */
 
-#include "chip/kinetis_sim.h"
+#include "hardware/kinetis_sim.h"
 #include "kinetis_tpm.h"
 
 #include <drivers/device/device.h>
 #include <drivers/drv_tone_alarm.h>
-#include <px4_defines.h>
+#include <px4_platform_common/defines.h>
 #include <systemlib/px4_macros.h>
 
-#include <cmath>
+#include <math.h>
 
 #define CAT3_(A, B, C)    A##B##C
 #define CAT3(A, B, C)     CAT3_(A, B, C)
@@ -159,21 +159,26 @@ void init()
 	rMOD      = 0;  // Default the timer to a modulo value of 1; playing notes will change this.
 }
 
-void start_note(unsigned frequency)
+hrt_abstime start_note(unsigned frequency)
 {
 	// Calculate the signal switching period.
 	// (Signal switching period is one half of the frequency period).
 	float signal_period = (1.0f / frequency) * 0.5f;
 
 	// Calculate the hardware clock divisor rounded to the nearest integer.
-	unsigned int divisor = std::round(signal_period * TONE_ALARM_CLOCK);
+	unsigned int divisor = roundf(signal_period * TONE_ALARM_CLOCK);
 
 	rCNT = 0;
 	rMOD = divisor;        // Load new signal switching period.
 	rSC |= (TPM_SC_CMOD_LPTPM_CLK);
 
 	// Configure the GPIO to enable timer output.
+	irqstate_t flags = enter_critical_section();
+	const hrt_abstime time_started = hrt_absolute_time();
 	px4_arch_configgpio(GPIO_TONE_ALARM);
+	leave_critical_section(flags);
+
+	return time_started;
 }
 
 void stop_note()

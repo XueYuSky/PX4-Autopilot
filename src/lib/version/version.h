@@ -42,7 +42,7 @@
 
 #pragma once
 
-#include <px4_config.h>
+#include <px4_platform_common/px4_config.h>
 #include <systemlib/px4_macros.h>
 #include <stdint.h>
 
@@ -186,6 +186,11 @@ __EXPORT uint64_t px4_mavlink_lib_version_binary(void);
  * @return this is not available on all OSes and can return 0
  */
 __EXPORT uint64_t px4_os_version_binary(void);
+
+/**
+ * get the git oem version tag (can be empty, no particular format)
+ */
+__EXPORT const char *px4_firmware_oem_version_string(void);
 
 __END_DECLS
 

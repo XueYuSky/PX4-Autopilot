@@ -39,8 +39,8 @@
  *
  */
 
-#include <px4_config.h>
-#include <px4_defines.h>
+#include <px4_platform_common/px4_config.h>
+#include <px4_platform_common/defines.h>
 #include <drivers/drv_hrt.h>
 
 #include "LandingTargetEstimator.h"
@@ -225,14 +225,10 @@ void LandingTargetEstimator::update()
 
 void LandingTargetEstimator::_check_params(const bool force)
 {
-	bool updated = _parameterSub.updated();
+	if (_parameter_update_sub.updated() || force) {
+		parameter_update_s pupdate;
+		_parameter_update_sub.copy(&pupdate);
 
-	if (updated) {
-		parameter_update_s paramUpdate;
-		_parameterSub.copy(&paramUpdate);
-	}
-
-	if (updated || force) {
 		_update_params();
 	}
 }

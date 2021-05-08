@@ -1,10 +1,11 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 """
 Script to parse uORB message format to ROS msg format
 Adapted from https://github.com/eProsima/px4_to_ros/blob/master/px4_to_ros2_PoC/px4_msgs/scripts/copy_and_rename.py
 """
 
 import os
+import re
 import sys
 from shutil import copyfile
 
@@ -12,7 +13,7 @@ __author__ = 'PX4 Development Team'
 __copyright__ = \
     '''
      '
-     '   Copyright (C) 2018 PX4 Development Team. All rights reserved.
+     '   Copyright (c) 2018 PX4 Development Team. All rights reserved.
      '
      ' Redistribution and use in source and binary forms, or without
      ' modification, permitted provided that the following conditions
@@ -90,7 +91,7 @@ for filename in os.listdir(output_dir):
                         fileUpdated = True
                         line = line.replace(('px4/' + msg_type),
                                             msg_type.partition(".")[0].title().replace('_', ''))
-                    if ('' + msg_type + '[') in line.partition('#')[0] or ('' + msg_type + ' ') in line.partition('#')[0]:
+                    if re.findall('^' + msg_type + '[\s\[]', line.partition('#')[0]):
                         fileUpdated = True
                         line = line.replace(msg_type,
                                             msg_type.partition(".")[0].title().replace('_', ''))

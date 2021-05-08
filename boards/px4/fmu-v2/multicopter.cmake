@@ -6,20 +6,18 @@ px4_add_board(
 	LABEL multicopter
 	TOOLCHAIN arm-none-eabi
 	ARCHITECTURE cortex-m4
+	CONSTRAINED_MEMORY
 	ROMFSROOT px4fmu_common
-	BOOTLOADER ${PX4_SOURCE_DIR}/ROMFS/px4fmu_common/extras/px4fmuv3_bl.bin
 	IO px4_io-v2_default
-	CONSTRAINED_FLASH
 	#UAVCAN_INTERFACES 2
-
+	CONSTRAINED_FLASH
 	SERIAL_PORTS
 		GPS1:/dev/ttyS3
 		TEL1:/dev/ttyS1
 		TEL2:/dev/ttyS2
 		TEL4:/dev/ttyS6
-
 	DRIVERS
-		adc
+		adc/board_adc
 		barometer/ms5611
 		#batt_smbus
 		camera_capture
@@ -28,23 +26,26 @@ px4_add_board(
 		gps
 		imu/l3gd20
 		imu/lsm303d
-		imu/mpu6000
-		#imu/mpu9250
+		imu/invensense/mpu6000
+		#imu/invensense/mpu9250
 		irlock
 		lights/rgbled
 		magnetometer/hmc5883
-		optical_flow/px4flow
-		px4fmu
+		#optical_flow/px4flow
+		pwm_out
 		px4io
 		tone_alarm
-
 	MODULES
 		#attitude_estimator_q
+		battery_status
 		camera_feedback
 		commander
 		dataman
 		ekf2
-		events
+		flight_mode_manager
+		gyro_calibration
+		#gyro_fft
+		#events
 		land_detector
 		landing_target_estimator
 		load_mon
@@ -52,19 +53,23 @@ px4_add_board(
 		logger
 		mavlink
 		mc_att_control
+		mc_hover_thrust_estimator
 		mc_pos_control
+		mc_rate_control
 		navigator
+		rc_update
 		sensors
-		vmount
-
+		#sih
+		#temperature_compensation
+		#vmount
 	SYSTEMCMDS
-		bl_update
-		#config
+		#bl_update
 		#dumpfile
 		#esc_calib
 		hardfault_log
 		#i2cdetect
 		#led_control
+		mft
 		mixer
 		#motor_ramp
 		#motor_test
@@ -78,8 +83,8 @@ px4_add_board(
 		top
 		#topic_listener
 		tune_control
-		usb_connected
+		#uorb
+		#usb_connected
 		ver
-		work_queue
-
+		#work_queue
 	)

@@ -12,9 +12,11 @@ uint8 ARMING_STATE_MAX = 6
 
 # FailureDetector status
 uint8 FAILURE_NONE = 0
-uint8 FAILURE_ROLL = 1 	# (1 << 0)
-uint8 FAILURE_PITCH = 2	# (1 << 1)
-uint8 FAILURE_ALT = 4 	# (1 << 2)
+uint8 FAILURE_ROLL = 1 	        # (1 << 0)
+uint8 FAILURE_PITCH = 2	        # (1 << 1)
+uint8 FAILURE_ALT = 4 	        # (1 << 2)
+uint8 FAILURE_EXT = 8 	        # (1 << 3)
+uint8 FAILURE_ARM_ESC = 16      # (1 << 4)
 
 # HIL
 uint8 HIL_STATE_OFF = 0
@@ -27,8 +29,6 @@ uint8 NAVIGATION_STATE_POSCTL = 2		# Position control mode
 uint8 NAVIGATION_STATE_AUTO_MISSION = 3		# Auto mission mode
 uint8 NAVIGATION_STATE_AUTO_LOITER = 4		# Auto loiter mode
 uint8 NAVIGATION_STATE_AUTO_RTL = 5		# Auto return to launch mode
-uint8 NAVIGATION_STATE_AUTO_RCRECOVER = 6	# RC recover mode
-uint8 NAVIGATION_STATE_AUTO_RTGS = 7		# Auto return to groundstation on data link loss
 uint8 NAVIGATION_STATE_AUTO_LANDENGFAIL = 8 	# Auto land on engine failure
 uint8 NAVIGATION_STATE_AUTO_LANDGPSFAIL = 9	# Auto land on gps failure (e.g. open loop loiter down)
 uint8 NAVIGATION_STATE_ACRO = 10		# Acro mode
@@ -37,7 +37,7 @@ uint8 NAVIGATION_STATE_DESCEND = 12		# Descend mode (no position control)
 uint8 NAVIGATION_STATE_TERMINATION = 13		# Termination mode
 uint8 NAVIGATION_STATE_OFFBOARD = 14
 uint8 NAVIGATION_STATE_STAB = 15		# Stabilized mode
-uint8 NAVIGATION_STATE_RATTITUDE = 16		# Rattitude (aka "flip") mode
+uint8 NAVIGATION_STATE_UNUSED2 = 16		# Free slot
 uint8 NAVIGATION_STATE_AUTO_TAKEOFF = 17	# Takeoff
 uint8 NAVIGATION_STATE_AUTO_LAND = 18		# Land
 uint8 NAVIGATION_STATE_AUTO_FOLLOW_TARGET = 19	# Auto Follow
@@ -53,14 +53,17 @@ uint8 VEHICLE_TYPE_UNKNOWN = 0
 uint8 VEHICLE_TYPE_ROTARY_WING = 1
 uint8 VEHICLE_TYPE_FIXED_WING = 2
 uint8 VEHICLE_TYPE_ROVER = 3
+uint8 VEHICLE_TYPE_AIRSHIP = 4
 
 # state machine / state of vehicle.
 # Encodes the complete system state and is set by the commander app.
 
 uint8 nav_state				# set navigation state machine to specified value
+uint64 nav_state_timestamp              # time when current nav_state activated
 uint8 arming_state			# current arming state
 uint8 hil_state				# current hil state
 bool failsafe				# true if system is in failsafe state (e.g.:RTL, Hover, Terminate, ...)
+uint64 failsafe_timestamp               # time when failsafe was activated
 
 uint8 system_type			# system type, contains mavlink MAV_TYPE
 uint8 system_id			# system id, contains MAVLink's system ID field
@@ -71,6 +74,7 @@ uint8 vehicle_type          # Type of vehicle (fixed-wing, rotary wing, ground)
                             # and VEHICLE_TYPE_FIXED_WING when flying as a fixed-wing
 
 bool is_vtol				# True if the system is VTOL capable
+bool is_vtol_tailsitter                 # True if the system performs a 90° pitch down rotation during transition from MC to FW
 bool vtol_fw_permanent_stab		# True if VTOL should stabilize attitude for fw in manual mode
 bool in_transition_mode			# True if VTOL is doing a transition
 bool in_transition_to_fw		# True if VTOL is doing a transition from MC to FW
@@ -93,10 +97,25 @@ uint32 onboard_control_sensors_present
 uint32 onboard_control_sensors_enabled
 uint32 onboard_control_sensors_health
 
-# airspeed fault and airspeed use status
-float32 arspd_check_level	# integrated airspeed inconsistency as checked against the COM_TAS_FS_INTEG parameter
-bool aspd_check_failing		# true when airspeed consistency checks are failing
-bool aspd_fault_declared	# true when an airspeed fault has been declared
-bool aspd_use_inhibit		# true if switching to a non-airspeed control mode has been requested
-bool aspd_fail_rtl		# true if airspeed failure invoked RTL has been requested
-float32 load_factor_ratio	# ratio of measured to aerodynamic load factor limit. Greater than 1 indicates airspeed low error condition.
+
+uint8 ARM_DISARM_REASON_TRANSITION_TO_STANDBY = 0
+uint8 ARM_DISARM_REASON_RC_STICK = 1
+uint8 ARM_DISARM_REASON_RC_SWITCH = 2
+uint8 ARM_DISARM_REASON_COMMAND_INTERNAL = 3
+uint8 ARM_DISARM_REASON_COMMAND_EXTERNAL = 4
+uint8 ARM_DISARM_REASON_MISSION_START = 5
+uint8 ARM_DISARM_REASON_SAFETY_BUTTON = 6
+uint8 ARM_DISARM_REASON_AUTO_DISARM_LAND = 7
+uint8 ARM_DISARM_REASON_AUTO_DISARM_PREFLIGHT = 8
+uint8 ARM_DISARM_REASON_KILL_SWITCH = 9
+uint8 ARM_DISARM_REASON_LOCKDOWN = 10
+uint8 ARM_DISARM_REASON_FAILURE_DETECTOR = 11
+uint8 ARM_DISARM_REASON_SHUTDOWN = 12
+uint8 ARM_DISARM_REASON_UNIT_TEST = 13
+
+uint8 latest_arming_reason
+uint8 latest_disarming_reason
+
+uint64 armed_time       # Arming timestamp (microseconds)
+
+uint64 takeoff_time     # Takeoff timestamp (microseconds)

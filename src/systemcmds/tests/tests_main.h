@@ -36,7 +36,7 @@
  * Tests declaration file.
  */
 
-#include <px4_config.h>
+#include <px4_platform_common/px4_config.h>
 
 #ifndef __APPS_PX4_TESTS_H
 #define __APPS_PX4_TESTS_H
@@ -44,10 +44,10 @@
 __BEGIN_DECLS
 
 extern int test_adc(int argc, char *argv[]);
-extern int test_autodeclination(int argc, char *argv[]);
+extern int test_atomic_bitset(int argc, char *argv[]);
 extern int test_bezierQuad(int argc, char *argv[]);
+extern int test_bitset(int argc, char *argv[]);
 extern int test_bson(int argc, char *argv[]);
-extern int test_controlmath(int argc, char *argv[]);
 extern int test_conv(int argc, char *argv[]);
 extern int test_dataman(int argc, char *argv[]);
 extern int test_file(int argc, char *argv[]);
@@ -56,12 +56,15 @@ extern int test_float(int argc, char *argv[]);
 extern int test_hott_telemetry(int argc, char *argv[]);
 extern int test_hrt(int argc, char *argv[]);
 extern int test_int(int argc, char *argv[]);
+extern int test_i2c_spi_cli(int argc, char *argv[]);
 extern int test_IntrusiveQueue(int argc, char *argv[]);
 extern int test_jig_voltages(int argc, char *argv[]);
 extern int test_led(int argc, char *argv[]);
+extern int test_IntrusiveSortedList(int argc, char *argv[]);
 extern int test_List(int argc, char *argv[]);
 extern int test_mathlib(int argc, char *argv[]);
 extern int test_matrix(int argc, char *argv[]);
+extern int test_microbench_atomic(int argc, char *argv[]);
 extern int test_microbench_hrt(int argc, char *argv[]);
 extern int test_microbench_math(int argc, char *argv[]);
 extern int test_microbench_matrix(int argc, char *argv[]);
@@ -77,23 +80,14 @@ extern int test_rc(int argc, char *argv[]);
 extern int test_search_min(int argc, char *argv[]);
 extern int test_servo(int argc, char *argv[]);
 extern int test_sleep(int argc, char *argv[]);
-extern int test_smooth_z(int argc, char *argv[]);
 extern int test_time(int argc, char *argv[]);
-extern int test_tone(int argc, char *argv[]);
 extern int test_uart_baudchange(int argc, char *argv[]);
 extern int test_uart_break(int argc, char *argv[]);
 extern int test_uart_console(int argc, char *argv[]);
 extern int test_uart_loopback(int argc, char *argv[]);
 extern int test_uart_send(int argc, char *argv[]);
 extern int test_versioning(int argc, char *argv[]);
-
-/* external */
-extern int commander_tests_main(int argc, char *argv[]);
-extern int mavlink_tests_main(int argc, char *argv[]);
-extern int controllib_test_main(int argc, char *argv[]);
-extern int uorb_tests_main(int argc, char *argv[]);
-extern int rc_tests_main(int argc, char *argv[]);
-extern int sf0x_tests_main(int argc, char *argv[]);
+extern int test_cli(int argc, char *argv[]);
 
 __END_DECLS
 
