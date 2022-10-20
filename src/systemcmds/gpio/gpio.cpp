@@ -42,6 +42,8 @@
 #include <px4_platform_common/module.h>
 #include <px4_platform_common/px4_config.h>
 
+#include <stdlib.h>
+
 #include <nuttx/ioexpander/gpio.h>
 #include <fcntl.h>
 
@@ -299,9 +301,10 @@ void usage(const char *reason)
 		R"DESCR_STR(
 ### Description
 This command is used to read and write GPIOs
-
+```
 gpio read <PORT><PIN>/<DEVICE> [PULLDOWN|PULLUP] [--force]
 gpio write <PORT><PIN>/<DEVICE> <VALUE> [PUSHPULL|OPENDRAIN] [--force]
+```
 
 ### Examples
 Read the value on port H pin 4 configured as pullup, and it is high

@@ -56,10 +56,7 @@
 #include <systemlib/err.h>
 #include <systemlib/px4_macros.h>
 
-#include <drivers/drv_pwm_output.h>
 #include <px4_arch/io_timer.h>
-
-
 
 #if defined(BOARD_HAS_LED_PWM)
 
@@ -93,8 +90,6 @@
 #define rDMAR(_tmr)     REG(_tmr, STM32_GTIM_DMAR_OFFSET)
 #define rBDTR(_tmr)     REG(_tmr, STM32_ATIM_BDTR_OFFSET)
 
-
-extern int             io_timer_init_timer(unsigned timer);
 
 static void             led_pwm_channel_init(unsigned channel);
 
@@ -253,15 +248,15 @@ led_pwm_servo_set(unsigned channel, uint8_t  cvalue)
 
 	return 0;
 }
-unsigned
-led_pwm_servo_get(unsigned channel)
+
+unsigned led_pwm_servo_get(unsigned channel)
 {
 	if (channel >= 3) {
 		return 0;
 	}
 
 	unsigned timer = led_pwm_channels[channel].timer_index;
-	servo_position_t value = 0;
+	uint16_t value = 0;
 
 	/* test timer for validity */
 	if ((led_pwm_timers[timer].base == 0) ||
@@ -291,13 +286,18 @@ led_pwm_servo_get(unsigned channel)
 	unsigned period = led_pwm_timer_get_period(timer);
 	return ((value + 1) * 255 / period);
 }
-int
-led_pwm_servo_init(void)
+
+int led_pwm_servo_init()
 {
 	/* do basic timer initialisation first */
 	for (unsigned i = 0; i < arraySize(led_pwm_timers); i++) {
 #if defined(BOARD_HAS_SHARED_PWM_TIMERS)
-		io_timer_init_timer(i);
+		int ret = io_timer_init_timer(i, IOTimerChanMode_LED);
+
+		if (ret != 0) {
+			return ret;
+		}
+
 #else
 		led_pwm_timer_init_timer(i);
 #endif

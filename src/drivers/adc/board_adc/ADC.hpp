@@ -1,6 +1,6 @@
 /****************************************************************************
  *
- *   Copyright (C) 2012-2020 PX4 Development Team. All rights reserved.
+ *   Copyright (C) 2012-2021 PX4 Development Team. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -37,6 +37,7 @@
  * Driver for an ADC.
  *
  */
+#include <inttypes.h>
 #include <stdint.h>
 
 #include <drivers/drv_adc.h>
@@ -63,7 +64,7 @@ using namespace time_literals;
 class ADC : public ModuleBase<ADC>, public px4::ScheduledWorkItem
 {
 public:
-	ADC(uint32_t base_address = SYSTEM_ADC_BASE, uint32_t channels = ADC_CHANNELS);
+	ADC(uint32_t base_address = SYSTEM_ADC_BASE, uint32_t channels = ADC_CHANNELS, bool publish_adc_report = true);
 
 	~ADC() override;
 
@@ -101,6 +102,8 @@ private:
 
 	static const hrt_abstime	kINTERVAL{10_ms};	/**< 100Hz base rate */
 
+	const bool 			_publish_adc_report;
+
 	perf_counter_t			_sample_perf;
 
 	unsigned			_channel_count{0};
@@ -109,6 +112,7 @@ private:
 
 	uORB::Publication<adc_report_s>		_to_adc_report{ORB_ID(adc_report)};
 	uORB::Publication<system_power_s>	_to_system_power{ORB_ID(system_power)};
+
 #ifdef BOARD_GPIO_VDD_5V_COMP_VALID
 	int _5v_comp_valid_fd {-1};
 #endif

@@ -45,7 +45,7 @@
 #include <matrix/matrix/math.hpp>
 #include <uORB/Subscription.hpp>
 #include <uORB/topics/manual_control_setpoint.h>
-#include <uORB/topics/vehicle_status.h>
+#include <uORB/topics/failsafe_flags.h>
 
 class Sticks : public ModuleParams
 {
@@ -53,11 +53,24 @@ public:
 	Sticks(ModuleParams *parent);
 	~Sticks() = default;
 
-	bool checkAndSetStickInputs();
+	// Checks for updated manual control input & updates internal values
+	bool checkAndUpdateStickInputs();
+
 	bool isAvailable() { return _input_available; };
+
+	// Position : 0 : pitch, 1 : roll, 2 : throttle, 3 : yaw
 	const matrix::Vector<float, 4> &getPosition() { return _positions; };
 	const matrix::Vector<float, 4> &getPositionExpo() { return _positions_expo; };
 
+	// Helper functions to get stick values more intuitively
+	float getPitch() const { return _positions(0); }
+	float getRoll() const { return _positions(1); }
+	float getThrottleZeroCentered() const { return -_positions(2); } // Convert Z-axis(down) command to Up-axis frame
+	float getYaw() const { return _positions(3); }
+	float getPitchExpo() const { return _positions_expo(0); }
+	float getRollExpo() const { return _positions_expo(1); }
+	float getThrottleZeroCenteredExpo() const { return -_positions_expo(2); } // Convert Z-axis(down) command to Up-axis frame
+	float getYawExpo() const { return _positions_expo(3); }
 
 	/**
 	 * Limit the the horizontal input from a square shaped joystick gimbal to a unit circle
@@ -79,7 +92,7 @@ private:
 	matrix::Vector<float, 4> _positions_expo; ///< modified manual sticks using expo function
 
 	uORB::Subscription _manual_control_setpoint_sub{ORB_ID(manual_control_setpoint)};
-	uORB::Subscription _vehicle_status_sub{ORB_ID(vehicle_status)};
+	uORB::Subscription _failsafe_flags_sub{ORB_ID(failsafe_flags)};
 
 	DEFINE_PARAMETERS(
 		(ParamFloat<px4::params::MPC_HOLD_DZ>) _param_mpc_hold_dz,

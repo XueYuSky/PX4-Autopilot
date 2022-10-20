@@ -2,15 +2,10 @@
 #
 # @name Aion Robotics R1 UGV
 #
-# @url http://docs.aionrobotics.com/en/latest/r1-ugv.html
+# @url https://www.aionrobotics.com/r1
 #
 # @type Rover
 # @class Rover
-#
-# @output MAIN0 Speed of left wheels
-# @output MAIN1 Speed of right wheels
-#
-# @maintainer Timothy Scott
 #
 # @board px4_fmu-v2 exclude
 # @board bitcraze_crazyflie exclude
@@ -18,8 +13,7 @@
 
 . ${R}etc/init.d/rc.rover_defaults
 
-
-param set-default BAT_N_CELLS 4
+param set-default BAT1_N_CELLS 4
 
 param set-default EKF2_GBIAS_INIT 0.01
 param set-default EKF2_ANGERR_INIT 0.01
@@ -55,14 +49,6 @@ param set-default MIS_TAKEOFF_ALT 0.01
 
 param set-default NAV_ACC_RAD 0.5
 
-# Provide ESC a constant 1500 us pulse, which corresponds to
-# idle on the Roboclaw motor controller on the Aion R1
-param set-default PWM_MAIN_DISARM 1500
-param set-default PWM_MAIN_DIS0 1500
-param set-default PWM_MAIN_DIS1 1500
-param set-default PWM_MAIN_MAX 2000
-param set-default PWM_MAIN_MIN 1000
-
 # Enable Airspeed check circuit breaker because Rovers will have no airspeed sensor
 param set-default CBRK_AIRSPD_CHK 162128
 
@@ -72,16 +58,18 @@ param set-default GND_MAX_ANG 3.1415
 param set-default RBCLW_BAUD 8
 param set-default RBCLW_COUNTS_REV 1200
 param set-default RBCLW_ADDRESS 128
-# param set SER_TEL4_BAUD 115200
 # 104 corresponds to Telem 4
 param set-default RBCLW_SER_CFG 104
 # Start this driver after setting parameters, because the driver uses some of those parameters.
 # roboclaw start /dev/ttyS3
 
-# Configure this as rover
-set MAV_TYPE 10
+# Set geometry & output configration
+param set-default CA_AIRFRAME 6
+param set-default CA_R_REV 3
+param set-default PWM_MAIN_FUNC1 101
+param set-default PWM_MAIN_FUNC2 102
+param set-default PWM_MAIN_DIS1 1500
+param set-default PWM_MAIN_DIS2 1500
+param set-default PWM_MAIN_TIM0 50
+param set-default PWM_MAIN_TIM1 50
 
-# Set mixer
-set MIXER generic_diff_rover
-
-set PWM_MAIN_REV2 1

@@ -33,7 +33,7 @@
 
 #include "FakeMagnetometer.hpp"
 
-#include <lib/ecl/geo_lookup/geo_mag_declination.h>
+#include <lib/world_magnetic_model/geo_mag_declination.h>
 
 using namespace matrix;
 using namespace time_literals;
@@ -44,7 +44,6 @@ FakeMagnetometer::FakeMagnetometer() :
 	_px4_mag(0, ROTATION_NONE)
 {
 	_px4_mag.set_device_type(DRV_MAG_DEVTYPE_MAGSIM);
-	_px4_mag.set_external(false);
 }
 
 bool FakeMagnetometer::init()
@@ -62,7 +61,7 @@ void FakeMagnetometer::Run()
 	}
 
 	if (_vehicle_gps_position_sub.updated()) {
-		vehicle_gps_position_s gps;
+		sensor_gps_s gps;
 
 		if (_vehicle_gps_position_sub.copy(&gps)) {
 			if (gps.eph < 1000) {

@@ -41,43 +41,33 @@
 
 
 /**
- * Enable/disable usage of fixed-wing actuators in hover to generate forward force (instead of pitching down).
+ * Enable usage of fixed-wing actuators in hover to generate forward force (instead of pitching down).
  *
- * This technique can be used to avoid the plane having to pitch down in order to move forward.
- * This prevents large, negative lift values being created when facing strong winds.
+ * This feature can be used to avoid the plane having to pitch down in order to move forward,
+ * and prevents large, negative lift values being created when facing strong winds.
  * Fixed-wing forward actuators refers to puller/pusher (standard VTOL), or forward-tilt (tiltrotor VTOL).
- * Only active if demaded down pitch is above VT_DWN_PITCH_MAX, and uses VT_FWD_THRUST_SC to get from
- * demanded down pitch to fixed-wing actuation.
+ * Only active if demanded down pitch is below VT_PITCH_MIN.
+ * Use VT_FWD_THRUST_SC to tune it.
  *
- * @value 0 Disable FW forward actuation in hover.
- * @value 1 Enable FW forward actuation in hover in altitude, position and auto modes (except LANDING).
- * @value 2 Enable FW forward actuation in hover in altitude, position and auto modes if above MPC_LAND_ALT1.
- * @value 3 Enable FW forward actuation in hover in altitude, position and auto modes if above MPC_LAND_ALT2.
- * @value 4 Enable FW forward actuation in hover in altitude, position and auto modes.
- * @value 5 Enable FW forward actuation in hover in altitude, position and auto modes if above MPC_LAND_ALT1 (except LANDING).
- * @value 6 Enable FW forward actuation in hover in altitude, position and auto modes if above MPC_LAND_ALT2 (except LANDING).
+ * Only active (if enabled) in Altitude, Position and Auto modes, not in Stabilized.
+ *
+ * @value 0 Disabled
+ * @value 1 Enabled (except LANDING)
+ * @value 2 Enabled if distance to ground above MPC_LAND_ALT1
+ * @value 3 Enabled if distance to ground above MPC_LAND_ALT2
+ * @value 4 Enabled constantly
+ * @value 5 Enabled if distance to ground above MPC_LAND_ALT1 (except LANDING)
+ * @value 6 Enabled if distance to ground above MPC_LAND_ALT2 (except LANDING)
  *
  * @group VTOL Attitude Control
  */
 PARAM_DEFINE_INT32(VT_FWD_THRUST_EN, 0);
 
 /**
- * Maximum allowed angle the vehicle is allowed to pitch down to generate forward force
- *
- * When fixed-wing forward actuation is active (see VT_FW_TRHUST_EN).
- * If demanded down pitch exceeds this limmit, the fixed-wing forward actuators are used instead.
- *
- * @min 0.0
- * @max 45.0
- * @group VTOL Attitude Control
- */
-PARAM_DEFINE_FLOAT(VT_DWN_PITCH_MAX, 5.0f);
-
-/**
  * Fixed-wing actuator thrust scale for hover forward flight.
  *
  * Scale applied to the demanded down-pitch to get the fixed-wing forward actuation in hover mode.
- * Only active if demaded down pitch is above VT_DWN_PITCH_MAX.
+ * Only active if demaded down pitch is below VT_PITCH_MIN.
  * Enabled via VT_FWD_THRUST_EN.
  *
  * @min 0.0
@@ -101,8 +91,8 @@ PARAM_DEFINE_FLOAT(VT_B_TRANS_RAMP, 3.0f);
 /**
  * Output on airbrakes channel during back transition
  *
- * Used for airbrakes or with ESCs that have reverse thrust enabled on a seperate channel
- * Airbrakes need to be enables for your selected model/mixer
+ * Used for airbrakes or with ESCs that have reverse thrust enabled on a separate channel.
+ * Airbrakes need to be enabled for your selected model/mixer.
  *
  * @min 0
  * @max 1

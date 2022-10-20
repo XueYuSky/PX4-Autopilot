@@ -40,6 +40,8 @@
 #include <px4_platform_common/posix.h>
 #include <px4_platform_common/time.h>
 
+#include <stdlib.h>
+
 const cdev::px4_file_operations_t cdev::CDev::fops = {};
 
 pthread_mutex_t devmutex = PTHREAD_MUTEX_INITIALIZER;
@@ -62,9 +64,8 @@ private:
 	px4_dev_t() = default;
 };
 
-static px4_dev_t *devmap[256] {};
-
-#define PX4_MAX_FD 256
+#define PX4_MAX_FD 512
+static px4_dev_t *devmap[PX4_MAX_FD] {};
 static cdev::file_t filemap[PX4_MAX_FD] {};
 
 class VFile : public cdev::CDev

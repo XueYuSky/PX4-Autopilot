@@ -46,7 +46,6 @@
 #include <px4_platform_common/getopt.h>
 
 #include <lib/rc/dsm.h>
-#include <drivers/drv_rc_input.h>
 #include <drivers/drv_hrt.h>
 
 #include <uORB/uORB.h>
@@ -205,6 +204,9 @@ void fill_input_rc(uint16_t raw_rc_count, uint16_t raw_rc_values[input_rc_s::RC_
 	input_rc.rc_lost = (valid_chans == 0);
 	input_rc.rc_lost_frame_count = frame_drops;
 	input_rc.rc_total_frame_count = 0;
+
+	input_rc.link_quality = -1;
+	input_rc.rssi_dbm = NAN;
 }
 
 int start(int argc, char *argv[])

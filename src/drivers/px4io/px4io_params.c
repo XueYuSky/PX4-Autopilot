@@ -45,15 +45,14 @@
 /**
  * Set usage of IO board
  *
- * Can be used to use a standard startup script but with a FMU only set-up. Set to 0 to force the FMU only set-up.
+ * Can be used to use a configure the use of the IO board.
  *
- * @boolean
- * @min 0
- * @max 1
+ * @value 0 IO PWM disabled (RC only)
+ * @value 1 IO enabled (RC & PWM)
  * @reboot_required true
  * @group System
  */
-PARAM_DEFINE_INT32(SYS_USE_IO, 1);
+PARAM_DEFINE_INT32(SYS_USE_IO, 0);
 
 /**
  * S.BUS out

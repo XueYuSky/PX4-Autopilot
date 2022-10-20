@@ -36,9 +36,10 @@
 #include "UavcanPublisherBase.hpp"
 
 #include <com/hex/equipment/flow/Measurement.hpp>
+#include <conversion/rotation.h>
 
 #include <uORB/SubscriptionCallback.hpp>
-#include <uORB/topics/optical_flow.h>
+#include <uORB/topics/vehicle_optical_flow.h>
 
 namespace uavcannode
 {
@@ -51,9 +52,11 @@ class FlowMeasurement :
 public:
 	FlowMeasurement(px4::WorkItem *work_item, uavcan::INode &node) :
 		UavcanPublisherBase(com::hex::equipment::flow::Measurement::DefaultDataTypeID),
-		uORB::SubscriptionCallbackWorkItem(work_item, ORB_ID(optical_flow)),
+		uORB::SubscriptionCallbackWorkItem(work_item, ORB_ID(vehicle_optical_flow)),
 		uavcan::Publisher<com::hex::equipment::flow::Measurement>(node)
-	{}
+	{
+		this->setPriority(uavcan::TransferPriority::Default);
+	}
 
 	void PrintInfo() override
 	{
@@ -68,15 +71,19 @@ public:
 	void BroadcastAnyUpdates() override
 	{
 		// optical_flow -> com::hex::equipment::flow::Measurement
-		optical_flow_s optical_flow;
+		vehicle_optical_flow_s optical_flow;
 
 		if (uORB::SubscriptionCallbackWorkItem::update(&optical_flow)) {
 			com::hex::equipment::flow::Measurement measurement{};
-			measurement.integration_interval  = optical_flow.integration_timespan * 1e-6f; // us -> s
-			measurement.rate_gyro_integral[0] = optical_flow.gyro_x_rate_integral;
-			measurement.rate_gyro_integral[1] = optical_flow.gyro_y_rate_integral;
-			measurement.flow_integral[0] = optical_flow.pixel_flow_x_integral;
-			measurement.flow_integral[1] = optical_flow.pixel_flow_y_integral;
+			measurement.integration_interval  = optical_flow.integration_timespan_us * 1e-6f; // us -> s
+
+			// rotate measurements in yaw from sensor frame to body frame
+			measurement.rate_gyro_integral[0] = optical_flow.delta_angle[0];
+			measurement.rate_gyro_integral[1] = optical_flow.delta_angle[1];
+
+			measurement.flow_integral[0] = optical_flow.pixel_flow[0];
+			measurement.flow_integral[1] = optical_flow.pixel_flow[1];
+
 			measurement.quality = optical_flow.quality;
 
 			uavcan::Publisher<com::hex::equipment::flow::Measurement>::broadcast(measurement);
@@ -85,5 +92,7 @@ public:
 			uORB::SubscriptionCallbackWorkItem::registerCallback();
 		}
 	}
+private:
+	matrix::Dcmf _rotation;
 };
 } // namespace uavcannode

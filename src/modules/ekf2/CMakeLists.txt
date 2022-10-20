@@ -33,21 +33,103 @@
 
 add_subdirectory(Utility)
 
+# Symforce code generation TODO:fixme
+# execute_process(
+#     COMMAND ${PYTHON_EXECUTABLE} -m symforce.symbolic
+#     RESULT_VARIABLE PYTHON_SYMFORCE_EXIT_CODE
+#     OUTPUT_QUIET
+# )
+# if(${PYTHON_SYMFORCE_EXIT_CODE} EQUAL 0)
+
+# 	set(EKF_DERIVATION_DIR ${CMAKE_CURRENT_SOURCE_DIR}/EKF/python/ekf_derivation)
+
+# 	set(EKF_GENERATED_SRC_FILES
+# 		${EKF_DERIVATION_DIR}/generated/compute_airspeed_h_and_k.h
+# 		${EKF_DERIVATION_DIR}/generated/compute_airspeed_innov_and_innov_var.h
+# 		${EKF_DERIVATION_DIR}/generated/compute_sideslip_h_and_k.h
+# 		${EKF_DERIVATION_DIR}/generated/compute_sideslip_innov_and_innov_var.h
+# 		${EKF_DERIVATION_DIR}/generated/covariance_prediction.h
+# 	)
+
+# 	add_custom_command(
+# 		OUTPUT ${EKF_GENERATED_SRC_FILES}
+# 		COMMAND ${PYTHON_EXECUTABLE} derivation.py
+# 		DEPENDS
+# 			${EKF_DERIVATION_DIR}/derivation.py
+# 			${EKF_DERIVATION_DIR}/derivation_utils.py
+
+# 		WORKING_DIRECTORY ${EKF_DERIVATION_DIR}
+# 		COMMENT "Symforce code generation"
+# 		USES_TERMINAL
+# 	)
+
+# 	add_custom_target(ekf2_symforce_generate DEPENDS ${EKF_GENERATED_SRC_FILES})
+# endif()
+
 px4_add_module(
 	MODULE modules__ekf2
 	MAIN ekf2
 	COMPILE_FLAGS
 		${MAX_CUSTOM_OPT_LEVEL}
+		-fno-associative-math
+		#-DDEBUG_BUILD
+		#-O0
+	INCLUDES
+		EKF
+	PRIORITY
+		"SCHED_PRIORITY_MAX - 18" # max priority below high priority WQ threads
+	STACK_MAX
+		3600
 	SRCS
+		EKF/airspeed_fusion.cpp
+		EKF/baro_height_control.cpp
+		EKF/bias_estimator.cpp
+		EKF/control.cpp
+		EKF/covariance.cpp
+		EKF/drag_fusion.cpp
+		EKF/ekf.cpp
+		EKF/ekf_helper.cpp
+		EKF/EKFGSF_yaw.cpp
+		EKF/estimator_interface.cpp
+		EKF/ev_height_control.cpp
+		EKF/fake_height_control.cpp
+		EKF/fake_pos_control.cpp
+		EKF/gnss_height_control.cpp
+		EKF/gps_checks.cpp
+		EKF/gps_control.cpp
+		EKF/gps_fusion.cpp
+		EKF/gps_yaw_fusion.cpp
+		EKF/height_control.cpp
+		EKF/imu_down_sampler.cpp
+		EKF/mag_control.cpp
+		EKF/mag_fusion.cpp
+		EKF/optical_flow_control.cpp
+		EKF/optflow_fusion.cpp
+		EKF/range_finder_consistency_check.cpp
+		EKF/range_height_control.cpp
+		EKF/sensor_range_finder.cpp
+		EKF/sideslip_fusion.cpp
+		EKF/terrain_estimator.cpp
+		EKF/vel_pos_fusion.cpp
+		EKF/zero_innovation_heading_update.cpp
+		EKF/zero_velocity_update.cpp
+
 		EKF2.cpp
 		EKF2.hpp
 		EKF2Selector.cpp
 		EKF2Selector.hpp
+
 	DEPENDS
-		git_ecl
-		ecl_EKF
-		ecl_geo
+		geo
+		hysteresis
 		perf
 		EKF2Utility
 		px4_work_queue
+		world_magnetic_model
+	UNITY_BUILD
 	)
+
+if(BUILD_TESTING)
+	add_subdirectory(EKF)
+	add_subdirectory(test)
+endif()

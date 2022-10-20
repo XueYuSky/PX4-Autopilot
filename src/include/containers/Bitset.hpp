@@ -33,6 +33,9 @@
 
 #pragma once
 
+#include <stdint.h>
+#include <stddef.h>
+
 namespace px4
 {
 
@@ -71,6 +74,14 @@ public:
 
 		} else {
 			_data[array_index(pos)] &= ~bitmask;
+		}
+	}
+
+	void reset()
+	{
+		// set bits to false
+		for (auto &d : _data) {
+			d = 0;
 		}
 	}
 

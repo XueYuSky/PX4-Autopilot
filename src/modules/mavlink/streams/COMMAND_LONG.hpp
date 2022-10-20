@@ -62,8 +62,12 @@ private:
 		bool sent = false;
 
 		static constexpr size_t COMMAND_LONG_SIZE = MAVLINK_MSG_ID_COMMAND_LONG_LEN + MAVLINK_NUM_NON_PAYLOAD_BYTES;
+		int vehicle_command_updates = 0;
 
-		while ((_mavlink->get_free_tx_buf() >= COMMAND_LONG_SIZE) && _vehicle_command_sub.updated()) {
+		while ((_mavlink->get_free_tx_buf() >= COMMAND_LONG_SIZE)
+		       && _vehicle_command_sub.updated() && (vehicle_command_updates < vehicle_command_s::ORB_QUEUE_LENGTH)) {
+
+			vehicle_command_updates++;
 
 			const unsigned last_generation = _vehicle_command_sub.get_last_generation();
 			vehicle_command_s cmd;
@@ -74,14 +78,23 @@ private:
 						_vehicle_command_sub.get_last_generation());
 				}
 
-				if (!cmd.from_external && cmd.command < vehicle_command_s::VEHICLE_CMD_PX4_INTERNAL_START) {
-					PX4_DEBUG("sending command %d to %d/%d", cmd.command, cmd.target_system, cmd.target_component);
+				// mavlink mavlink commands are <= UINT16_MAX
+				const bool px4_internal_cmd = (cmd.command >= vehicle_command_s::VEHICLE_CMD_PX4_INTERNAL_START);
+
+				// internal commands
+				const bool target_system_internal = (cmd.target_system == _mavlink->get_system_id())
+								    && (cmd.target_component == _mavlink->get_component_id())
+								    && (cmd.source_system == cmd.target_system)
+								    && (cmd.source_component == cmd.target_component);
+
+				if (!cmd.from_external && !px4_internal_cmd && !target_system_internal) {
+					PX4_DEBUG("sending command %ld to %d/%d", cmd.command, cmd.target_system, cmd.target_component);
 
 					MavlinkCommandSender::instance().handle_vehicle_command(cmd, _mavlink->get_channel());
 					sent = true;
 
 				} else {
-					PX4_DEBUG("not forwarding command %d to %d/%d", cmd.command, cmd.target_system, cmd.target_component);
+					PX4_DEBUG("not forwarding command %ld to %d/%d", cmd.command, cmd.target_system, cmd.target_component);
 				}
 			}
 		}

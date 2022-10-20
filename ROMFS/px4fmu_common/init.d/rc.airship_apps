@@ -49,6 +49,11 @@ fi
 ###############################################################################
 
 #
+# Start Control Allocator
+#
+control_allocator start
+
+#
 # Start Airship Attitude Controller.
 #
 airship_att_control start

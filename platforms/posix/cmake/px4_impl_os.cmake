@@ -225,21 +225,6 @@ function(px4_os_add_flags)
 		if(UNIX AND APPLE)
 			add_definitions(-D__PX4_DARWIN)
 
-			if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS 8.0)
-				message(FATAL_ERROR "PX4 Firmware requires XCode 8 or newer on Mac OS. Version installed on this system: ${CMAKE_CXX_COMPILER_VERSION}")
-			endif()
-
-			execute_process(COMMAND uname -v OUTPUT_VARIABLE DARWIN_VERSION)
-			string(REGEX MATCH "[0-9]+" DARWIN_VERSION ${DARWIN_VERSION})
-			# message(STATUS "PX4 Darwin Version: ${DARWIN_VERSION}")
-			if (DARWIN_VERSION LESS 16)
-				add_definitions(
-					-DCLOCK_MONOTONIC=1
-					-DCLOCK_REALTIME=0
-					-D__PX4_APPLE_LEGACY
-					)
-			endif()
-
 		elseif(CYGWIN)
 			add_definitions(
 				-D__PX4_CYGWIN
@@ -301,6 +286,7 @@ function(px4_os_prebuild_targets)
 			ARGN ${ARGN})
 
 	add_library(prebuild_targets INTERFACE)
+	target_link_libraries(prebuild_targets INTERFACE px4_layer drivers_board)
 	add_dependencies(prebuild_targets DEPENDS uorb_headers)
 
 endfunction()

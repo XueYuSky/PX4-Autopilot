@@ -1,6 +1,6 @@
 /****************************************************************************
  *
- *   Copyright (c) 2016-2020 PX4 Development Team. All rights reserved.
+ *   Copyright (c) 2016-2020, 2021 PX4 Development Team. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -47,6 +47,13 @@ TemperatureCompensationModule::TemperatureCompensationModule() :
 	ScheduledWorkItem(MODULE_NAME, px4::wq_configurations::lp_default),
 	_loop_perf(perf_alloc(PC_ELAPSED, "temperature_compensation"))
 {
+	for (int i = 0; i < SENSOR_COUNT_MAX; i++) {
+		_corrections.accel_temperature[i] = NAN;
+		_corrections.gyro_temperature[i] = NAN;
+		_corrections.baro_temperature[i] = NAN;
+	}
+
+	_sensor_correction_pub.advertise();
 }
 
 TemperatureCompensationModule::~TemperatureCompensationModule()
@@ -66,7 +73,8 @@ void TemperatureCompensationModule::parameters_update()
 			int temp = _temperature_compensation.set_sensor_id_gyro(report.device_id, uorb_index);
 
 			if (temp < 0) {
-				PX4_INFO("No temperature calibration available for gyro %i (device id %u)", uorb_index, report.device_id);
+				PX4_INFO("No temperature calibration available for gyro %" PRIu8 " (device id %" PRIu32 ")", uorb_index,
+					 report.device_id);
 				_corrections.gyro_device_ids[uorb_index] = 0;
 
 			} else {
@@ -83,7 +91,8 @@ void TemperatureCompensationModule::parameters_update()
 			int temp = _temperature_compensation.set_sensor_id_accel(report.device_id, uorb_index);
 
 			if (temp < 0) {
-				PX4_INFO("No temperature calibration available for accel %i (device id %u)", uorb_index, report.device_id);
+				PX4_INFO("No temperature calibration available for accel %" PRIu8 " (device id %" PRIu32 ")", uorb_index,
+					 report.device_id);
 				_corrections.accel_device_ids[uorb_index] = 0;
 
 			} else {
@@ -100,7 +109,8 @@ void TemperatureCompensationModule::parameters_update()
 			int temp = _temperature_compensation.set_sensor_id_baro(report.device_id, uorb_index);
 
 			if (temp < 0) {
-				PX4_INFO("No temperature calibration available for baro %i (device id %u)", uorb_index, report.device_id);
+				PX4_INFO("No temperature calibration available for baro %" PRIu8 " (device id %" PRIu32 ")", uorb_index,
+					 report.device_id);
 				_corrections.baro_device_ids[uorb_index] = 0;
 
 			} else {
@@ -125,6 +135,7 @@ void TemperatureCompensationModule::accelPoll()
 				if (_temperature_compensation.update_offsets_accel(uorb_index, report.temperature, offsets[uorb_index]) == 2) {
 
 					_corrections.accel_device_ids[uorb_index] = report.device_id;
+					_corrections.accel_temperature[uorb_index] = report.temperature;
 					_corrections_changed = true;
 				}
 			}
@@ -147,6 +158,7 @@ void TemperatureCompensationModule::gyroPoll()
 				if (_temperature_compensation.update_offsets_gyro(uorb_index, report.temperature, offsets[uorb_index]) == 2) {
 
 					_corrections.gyro_device_ids[uorb_index] = report.device_id;
+					_corrections.gyro_temperature[uorb_index] = report.temperature;
 					_corrections_changed = true;
 				}
 			}
@@ -169,6 +181,7 @@ void TemperatureCompensationModule::baroPoll()
 				if (_temperature_compensation.update_offsets_baro(uorb_index, report.temperature, offsets[uorb_index]) == 2) {
 
 					_corrections.baro_device_ids[uorb_index] = report.device_id;
+					_corrections.baro_temperature[uorb_index] = report.temperature;
 					_corrections_changed = true;
 				}
 			}
@@ -181,7 +194,10 @@ void TemperatureCompensationModule::Run()
 	perf_begin(_loop_perf);
 
 	// Check if user has requested to run the calibration routine
-	while (_vehicle_command_sub.updated()) {
+	int vehicle_command_updates = 0;
+
+	while (_vehicle_command_sub.updated() && (vehicle_command_updates < vehicle_command_s::ORB_QUEUE_LENGTH)) {
+		vehicle_command_updates++;
 		vehicle_command_s cmd;
 
 		if (_vehicle_command_sub.copy(&cmd)) {
@@ -213,10 +229,10 @@ void TemperatureCompensationModule::Run()
 					vehicle_command_ack_s command_ack{};
 
 					if (ret == 0) {
-						command_ack.result = vehicle_command_s::VEHICLE_CMD_RESULT_ACCEPTED;
+						command_ack.result = vehicle_command_ack_s::VEHICLE_CMD_RESULT_ACCEPTED;
 
 					} else {
-						command_ack.result = vehicle_command_s::VEHICLE_CMD_RESULT_FAILED;
+						command_ack.result = vehicle_command_ack_s::VEHICLE_CMD_RESULT_FAILED;
 					}
 
 					command_ack.timestamp = hrt_absolute_time();

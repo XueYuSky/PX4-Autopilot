@@ -1,6 +1,6 @@
 /****************************************************************************
  *
- *   Copyright (c) 2012-2019 PX4 Development Team. All rights reserved.
+ *   Copyright (c) 2012-2019, 2022 PX4 Development Team. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -52,6 +52,7 @@
 #include <string.h>
 #include <debug.h>
 #include <errno.h>
+#include <syslog.h>
 
 #include <nuttx/config.h>
 #include <nuttx/board.h>
@@ -73,6 +74,8 @@
 #include <px4_platform/gpio.h>
 #include <px4_platform/board_determine_hw_info.h>
 #include <px4_platform/board_dma_alloc.h>
+
+#include <mpu.h>
 
 /****************************************************************************
  * Pre-Processor Definitions
@@ -138,7 +141,7 @@ __EXPORT void board_peripheral_reset(int ms)
 __EXPORT void board_on_reset(int status)
 {
 	for (int i = 0; i < DIRECT_PWM_OUTPUT_CHANNELS; ++i) {
-		px4_arch_configgpio(PX4_MAKE_GPIO_INPUT_PULL_DOWN(io_timer_channel_get_as_pwm_input(i)));
+		px4_arch_configgpio(PX4_MAKE_GPIO_INPUT(io_timer_channel_get_as_pwm_input(i)));
 	}
 
 	if (status >= 0) {
@@ -203,7 +206,6 @@ stm32_boardinitialize(void)
  *
  ****************************************************************************/
 
-
 __EXPORT int board_app_initialize(uintptr_t arg)
 {
 	/* Power on Interfaces */
@@ -216,6 +218,13 @@ __EXPORT int board_app_initialize(uintptr_t arg)
 
 	px4_platform_init();
 
+	// Use the default HW_VER_REV(0x0,0x0) for Ramtron
+
+	stm32_spiinitialize();
+
+	/* Configure the HW based on the manifest */
+
+	px4_platform_configure();
 
 	if (OK == board_determine_hw_info()) {
 		syslog(LOG_INFO, "[boot] Rev 0x%1x : Ver 0x%1x %s\n", board_get_hw_revision(), board_get_hw_version(),
@@ -225,7 +234,7 @@ __EXPORT int board_app_initialize(uintptr_t arg)
 		syslog(LOG_ERR, "[boot] Failed to read HW revision and version\n");
 	}
 
-	/* configure SPI interfaces (after we determined the HW version) */
+	/* Configure the actual SPI interfaces (after we determined the HW version) */
 
 	stm32_spiinitialize();
 
@@ -235,25 +244,11 @@ __EXPORT int board_app_initialize(uintptr_t arg)
 		syslog(LOG_ERR, "[boot] DMA alloc FAILED\n");
 	}
 
-#if 0 // serial DMA is not yet implemented in NuttX for stm32h7
-	/* set up the serial DMA polling */
+#if defined(SERIAL_HAVE_RXDMA)
+	// set up the serial DMA polling at 1ms intervals for received bytes that have not triggered a DMA event.
 	static struct hrt_call serial_dma_call;
-	struct timespec ts;
-
-	/*
-	 * Poll at 1ms intervals for received bytes that have not triggered
-	 * a DMA event.
-	 */
-	ts.tv_sec = 0;
-	ts.tv_nsec = 1000000;
-
-	hrt_call_every(&serial_dma_call,
-		       ts_to_abstime(&ts),
-		       ts_to_abstime(&ts),
-		       (hrt_callout)stm32_serial_dma_poll,
-		       NULL);
+	hrt_call_every(&serial_dma_call, 1000, 1000, (hrt_callout)stm32_serial_dma_poll, NULL);
 #endif
-
 
 	/* initial LED state */
 	drv_led_start();
@@ -275,14 +270,9 @@ __EXPORT int board_app_initialize(uintptr_t arg)
 
 	if (ret != OK) {
 		led_on(LED_RED);
-		return ret;
 	}
 
 #endif /* CONFIG_MMCSD */
-
-	/* Configure the HW based on the manifest */
-
-	px4_platform_configure();
 
 	return OK;
 }

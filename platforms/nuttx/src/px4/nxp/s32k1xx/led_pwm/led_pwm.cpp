@@ -279,15 +279,15 @@ led_pwm_servo_set(unsigned channel, uint8_t  cvalue)
 
 	return 0;
 }
-unsigned
-led_pwm_servo_get(unsigned channel)
+
+unsigned led_pwm_servo_get(unsigned channel)
 {
 	if (channel >= 3) {
 		return 0;
 	}
 
 	unsigned timer = led_pwm_channels[channel].timer_index;
-	servo_position_t value = 0;
+	uint16_t value = 0;
 
 	/* test timer for validity */
 	if ((led_pwm_timers[timer].base == 0) ||
@@ -299,14 +299,14 @@ led_pwm_servo_get(unsigned channel)
 	unsigned period = led_pwm_timer_get_period(timer);
 	return ((value + 1) * 255 / period);
 }
-int
-led_pwm_servo_init(void)
+
+int led_pwm_servo_init()
 {
 	/* do basic timer initialisation first */
 	for (unsigned i = 0; i < arraySize(led_pwm_timers); i++) {
 #if defined(BOARD_HAS_SHARED_PWM_TIMERS)
 		// Use the io_timer init to mark it initialized
-		io_timer_init_timer(i);
+		io_timer_init_timer(i, IOTimerChanMode_LED);
 #endif
 		led_pwm_timer_init(i);
 	}

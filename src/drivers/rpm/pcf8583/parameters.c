@@ -32,6 +32,21 @@
  ****************************************************************************/
 
 /**
+* PCF8583 eneable driver
+*
+* Run PCF8583 driver automatically
+*
+* @reboot_required true
+* @min 0
+* @max 1
+* @group Sensors
+* @value 0 Disabled
+* @value 1 Eneabled
+*/
+PARAM_DEFINE_INT32(SENS_EN_PCF8583, 0);
+
+
+/**
  * PCF8583 rotorfreq (i2c) pool interval
  *
  * Determines how often the sensor is read out.
@@ -43,21 +58,11 @@
 PARAM_DEFINE_INT32(PCF8583_POOL, 1000000);
 
 /**
- * PCF8583 rotorfreq (i2c) i2c address
- *
- * @reboot_required true
- * @group Sensors
- * @value 80 Address 0x50 (80)
- * @value 81 Address 0x51 (81)
- */
-PARAM_DEFINE_INT32(PCF8583_ADDR, 80);
-
-/**
  * PCF8583 rotorfreq (i2c) pulse reset value
  *
- * Internal device counter is reset to 0 when overun this value,
- * counter is able to store upto 6 digits
- * reset of counter takes some time - measurement with reset has worse accurancy.
+ * Internal device counter is reset to 0 when overrun this value,
+ * counter is able to store up to 6 digits
+ * reset of counter takes some time - measurement with reset has worse accuracy.
  * 0 means reset counter after every measurement.
  *
  * @reboot_required true

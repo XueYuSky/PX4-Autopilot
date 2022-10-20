@@ -1,6 +1,6 @@
 /****************************************************************************
  *
- *   Copyright (c) 2018 PX4 Development Team. All rights reserved.
+ *   Copyright (c) 2018, 2021 PX4 Development Team. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -49,7 +49,9 @@
 #include <nuttx/config.h>
 #include <board_config.h>
 
+#include <inttypes.h>
 #include <stdbool.h>
+#include <syslog.h>
 
 #include "systemlib/px4_macros.h"
 
@@ -80,7 +82,9 @@ static const px4_hw_mft_item_t hw_mft_list_durandal[] = {
 };
 
 static px4_hw_mft_list_entry_t mft_lists[] = {
-	{0x0000, hw_mft_list_durandal, arraySize(hw_mft_list_durandal)},
+//  ver_rev
+	{VD00, hw_mft_list_durandal, arraySize(hw_mft_list_durandal)},
+	{VD01, hw_mft_list_durandal, arraySize(hw_mft_list_durandal)},
 };
 
 /************************************************************************************
@@ -103,7 +107,7 @@ __EXPORT px4_hw_mft_item board_query_manifest(px4_hw_mft_item_id_t id)
 	static px4_hw_mft_list_entry boards_manifest = px4_hw_mft_list_uninitialized;
 
 	if (boards_manifest == px4_hw_mft_list_uninitialized) {
-		uint32_t ver_rev = board_get_hw_version() << 8;
+		uint32_t ver_rev = board_get_hw_version() << 16;
 		ver_rev |= board_get_hw_revision();
 
 		for (unsigned i = 0; i < arraySize(mft_lists); i++) {
@@ -114,7 +118,7 @@ __EXPORT px4_hw_mft_item board_query_manifest(px4_hw_mft_item_id_t id)
 		}
 
 		if (boards_manifest == px4_hw_mft_list_uninitialized) {
-			syslog(LOG_ERR, "[boot] Board %4x is not supported!\n", ver_rev);
+			syslog(LOG_ERR, "[boot] Board %08"  PRIx32 " is not supported!\n", ver_rev);
 		}
 	}
 

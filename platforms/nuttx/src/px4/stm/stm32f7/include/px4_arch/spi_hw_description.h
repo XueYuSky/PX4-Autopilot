@@ -32,6 +32,10 @@
  ****************************************************************************/
 #pragma once
 
+#include <board_config.h>
+
+#if defined(CONFIG_SPI)
+
 #include "../../../stm32_common/include/px4_arch/spi_hw_description.h"
 
 constexpr bool validateSPIConfig(const px4_spi_bus_t spi_busses_conf[SPI_BUS_MAX_BUS_ITEMS])
@@ -84,3 +88,5 @@ constexpr bool validateSPIConfig(const px4_spi_bus_t spi_busses_conf[SPI_BUS_MAX
 
 	return false;
 }
+
+#endif // CONFIG_SPI

@@ -16,6 +16,11 @@ ekf2 start &
 ###############################################################################
 
 #
+# Start Control Allocator
+#
+control_allocator start
+
+#
 # Start UUV Attitude Controller.
 #
 uuv_att_control start

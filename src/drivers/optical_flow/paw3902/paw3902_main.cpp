@@ -1,6 +1,6 @@
 /****************************************************************************
  *
- *   Copyright (c) 2019-2020 PX4 Development Team. All rights reserved.
+ *   Copyright (c) 2019-2022 PX4 Development Team. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -32,6 +32,8 @@
  ****************************************************************************/
 
 #include "PAW3902.hpp"
+
+#include <px4_platform_common/getopt.h>
 #include <px4_platform_common/module.h>
 
 void PAW3902::print_usage()
@@ -43,49 +45,24 @@ void PAW3902::print_usage()
 	PRINT_MODULE_USAGE_DEFAULT_COMMANDS();
 }
 
-I2CSPIDriverBase *PAW3902::instantiate(const BusCLIArguments &cli, const BusInstanceIterator &iterator,
-				       int runtime_instance)
-{
-	float yaw_rotation_degrees = NAN;
-
-	if (cli.custom1 >= 0) {
-		yaw_rotation_degrees = cli.custom1;
-	}
-
-	PAW3902 *instance = new PAW3902(iterator.configuredBusOption(), iterator.bus(), iterator.devid(), cli.bus_frequency,
-					cli.spi_mode, iterator.DRDYGPIO(), yaw_rotation_degrees);
-
-	if (!instance) {
-		PX4_ERR("alloc failed");
-		return nullptr;
-	}
-
-	if (OK != instance->init()) {
-		delete instance;
-		return nullptr;
-	}
-
-	return instance;
-}
-
 extern "C" __EXPORT int paw3902_main(int argc, char *argv[])
 {
 	int ch = 0;
 	using ThisDriver = PAW3902;
 	BusCLIArguments cli{false, true};
 	cli.custom1 = -1;
-	cli.spi_mode = SPIDEV_MODE0;
+	cli.spi_mode = SPIDEV_MODE3;
 	cli.default_spi_frequency = SPI_SPEED;
 
-	while ((ch = cli.getopt(argc, argv, "Y:")) != EOF) {
+	while ((ch = cli.getOpt(argc, argv, "Y:")) != EOF) {
 		switch (ch) {
 		case 'Y':
-			cli.custom1 = atoi(cli.optarg());
+			cli.custom1 = atoi(cli.optArg());
 			break;
 		}
 	}
 
-	const char *verb = cli.optarg();
+	const char *verb = cli.optArg();
 
 	if (!verb) {
 		ThisDriver::print_usage();
@@ -96,13 +73,11 @@ extern "C" __EXPORT int paw3902_main(int argc, char *argv[])
 
 	if (!strcmp(verb, "start")) {
 		return ThisDriver::module_start(cli, iterator);
-	}
 
-	if (!strcmp(verb, "stop")) {
+	} else if (!strcmp(verb, "stop")) {
 		return ThisDriver::module_stop(iterator);
-	}
 
-	if (!strcmp(verb, "status")) {
+	} else if (!strcmp(verb, "status")) {
 		return ThisDriver::module_status(iterator);
 	}
 

@@ -14,7 +14,7 @@
  *
  * Derived from drivers/mtd/m25px.c
  *
- *   Copyright (C) 2009-2011 Gregory Nutt. All rights reserved.
+ *   Copyright (C) 2009-2011, 2021 Gregory Nutt. All rights reserved.
  *   Author: Gregory Nutt <gnutt@nuttx.org>
  *
  * Redistribution and use in source and binary forms, with or without
@@ -55,6 +55,7 @@
 #include <px4_platform_common/time.h>
 
 #include <sys/types.h>
+#include <inttypes.h>
 #include <stdint.h>
 #include <stdbool.h>
 #include <stdlib.h>
@@ -69,6 +70,7 @@
 #include <nuttx/mtd/mtd.h>
 
 #include <perf/perf_counter.h>
+#include <board_config.h>
 
 /************************************************************************************
  * Pre-processor Definitions
@@ -194,11 +196,8 @@ int at24c_nuke(void);
  * Private Data
  ************************************************************************************/
 
-/* At present, only a single AT24 part is supported.  In this case, a statically
- * allocated state structure may be used.
- */
-
-static struct at24c_dev_s g_at24c;
+static uint8_t number_of_instances = 0u;
+static struct at24c_dev_s g_at24c[BOARD_MTD_NUM_EEPROM];
 
 /************************************************************************************
  * Private Functions
@@ -261,7 +260,7 @@ void at24c_test(void)
 	unsigned errors = 0;
 
 	for (count = 0; count < 10000; count++) {
-		ssize_t result = at24c_bread(&g_at24c.mtd, 0, 1, buf);
+		ssize_t result = at24c_bread(&g_at24c[0].mtd, 0, 1, buf);
 
 		if (result == ERROR) {
 			if (errors++ > 2) {
@@ -270,7 +269,7 @@ void at24c_test(void)
 			}
 
 		} else if (result != 1) {
-			syslog(LOG_INFO, "unexpected %u\n", result);
+			syslog(LOG_INFO, "unexpected %zu\n", result);
 		}
 
 		if ((count % 100) == 0) {
@@ -314,7 +313,7 @@ static ssize_t at24c_bread(FAR struct mtd_dev_s *dev, off_t startblock,
 #endif
 	blocksleft  = nblocks;
 
-	finfo("startblock: %08lx nblocks: %d\n", (long)startblock, (int)nblocks);
+	finfo("startblock: %08jx nblocks: %zu\n", (intmax_t)startblock, nblocks);
 
 	if (startblock >= priv->npages) {
 		return 0;
@@ -409,7 +408,7 @@ static ssize_t at24c_bwrite(FAR struct mtd_dev_s *dev, off_t startblock, size_t 
 		nblocks = priv->npages - startblock;
 	}
 
-	finfo("startblock: %08lx nblocks: %d\n", (long)startblock, (int)nblocks);
+	finfo("startblock: %08jx nblocks: %zu\n", (intmax_t)startblock, nblocks);
 
 	BOARD_EEPROM_WP_CTRL(false);
 
@@ -505,7 +504,7 @@ static int at24c_ioctl(FAR struct mtd_dev_s *dev, int cmd, unsigned long arg)
 #endif
 				ret               = OK;
 
-				finfo("blocksize: %d erasesize: %d neraseblocks: %d\n",
+				finfo("blocksize: %" PRId32 " erasesize: %" PRId32 " neraseblocks: %" PRId32 "\n",
 				      geo->blocksize, geo->erasesize, geo->neraseblocks);
 			}
 		}
@@ -537,13 +536,17 @@ static int at24c_ioctl(FAR struct mtd_dev_s *dev, int cmd, unsigned long arg)
  *   other functions (such as a block or character driver front end).
  *
  ************************************************************************************/
-FAR struct mtd_dev_s *px4_at24c_initialize(FAR struct i2c_master_s *dev,
-		uint8_t address)
+int px4_at24c_initialize(FAR struct i2c_master_s *dev,
+			 uint8_t address, FAR struct mtd_dev_s **mtd_dev)
 
 {
+	if (number_of_instances >= BOARD_MTD_NUM_EEPROM) {
+		return -ENOMEM;
+	}
+
 	FAR struct at24c_dev_s *priv;
 
-	finfo("dev: %p\n", dev);
+	finfo("dev: %p, mtd_dev %p\n", dev, mtd_dev);
 
 	/* Allocate a state structure (we allocate the structure instead of using
 	 * a fixed, static allocation so that we can handle multiple FLASH devices.
@@ -552,7 +555,7 @@ FAR struct mtd_dev_s *px4_at24c_initialize(FAR struct i2c_master_s *dev,
 	 * to be extended to handle multiple FLASH parts on the same I2C bus.
 	 */
 
-	priv = &g_at24c;
+	priv = &g_at24c[number_of_instances];
 
 	if (priv) {
 		/* Initialize the allocated structure */
@@ -566,9 +569,9 @@ FAR struct mtd_dev_s *px4_at24c_initialize(FAR struct i2c_master_s *dev,
 		priv->mtd.ioctl  = at24c_ioctl;
 		priv->dev        = dev;
 
-		priv->perf_transfers = perf_alloc(PC_ELAPSED, "eeprom_trans");
-		priv->perf_resets_retries = perf_alloc(PC_COUNT, "eeprom_rst");
-		priv->perf_errors = perf_alloc(PC_COUNT, "eeprom_errs");
+		priv->perf_transfers = perf_alloc(PC_ELAPSED, "[at24c] eeprom transfer");
+		priv->perf_resets_retries = perf_alloc(PC_COUNT, "[at24c] eeprom reset");
+		priv->perf_errors = perf_alloc(PC_COUNT, "[at24c] eeprom errors");
 	}
 
 	/* attempt to read to validate device is present */
@@ -599,13 +602,21 @@ FAR struct mtd_dev_s *px4_at24c_initialize(FAR struct i2c_master_s *dev,
 	perf_end(priv->perf_transfers);
 
 	if (ret < 0) {
-		return NULL;
+		perf_free(priv->perf_transfers);
+		perf_free(priv->perf_resets_retries);
+		perf_free(priv->perf_errors);
+
+		priv->perf_transfers = NULL;
+		priv->perf_resets_retries = NULL;
+		priv->perf_errors = NULL;
+
+		return ret;
 	}
 
-	/* Return the implementation-specific state structure as the MTD device */
+	*mtd_dev = (FAR struct mtd_dev_s *)priv;
+	++number_of_instances;
 
-	finfo("Return %p\n", priv);
-	return (FAR struct mtd_dev_s *)priv;
+	return 0;
 }
 
 /*
@@ -613,5 +624,5 @@ FAR struct mtd_dev_s *px4_at24c_initialize(FAR struct i2c_master_s *dev,
  */
 int at24c_nuke(void)
 {
-	return at24c_eraseall(&g_at24c);
+	return at24c_eraseall(&g_at24c[0]);
 }

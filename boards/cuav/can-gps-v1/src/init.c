@@ -53,6 +53,7 @@
 #include <string.h>
 #include <debug.h>
 #include <errno.h>
+#include <syslog.h>
 
 #include <nuttx/board.h>
 #include <nuttx/i2c/i2c_master.h>
@@ -144,7 +145,6 @@ __EXPORT int board_app_initialize(uintptr_t arg)
 
 	if (result != OK) {
 		syslog(LOG_ERR, "[boot] FAILED to init params in FLASH %d\n", result);
-		return -ENODEV;
 	}
 
 #endif // FLASH_BASED_PARAMS

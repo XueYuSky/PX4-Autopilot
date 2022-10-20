@@ -1,6 +1,6 @@
 /****************************************************************************
  *
- *   Copyright (c) 2016-2020 PX4 Development Team. All rights reserved.
+ *   Copyright (c) 2016-2022 PX4 Development Team. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -46,6 +46,7 @@
 #include <px4_platform_common/posix.h>
 #include <px4_platform_common/px4_work_queue/WorkItem.hpp>
 #include <drivers/drv_hrt.h>
+#include <lib/hysteresis/hysteresis.h>
 #include <lib/mathlib/mathlib.h>
 #include <lib/perf/perf_counter.h>
 #include <uORB/Publication.hpp>
@@ -62,7 +63,7 @@
 
 using namespace time_literals;
 
-namespace RCUpdate
+namespace rc_update
 {
 
 /**
@@ -89,7 +90,7 @@ public:
 
 	int print_status() override;
 
-private:
+	static constexpr uint64_t VALID_DATA_MIN_INTERVAL_US{1_s / 3}; // assume valid RC input is at least 3 Hz
 
 	void Run() override;
 
@@ -103,7 +104,7 @@ private:
 	 */
 	void		update_rc_functions();
 
-	void		UpdateManualSetpoint(const hrt_abstime &timestamp_sample);
+	void		UpdateManualControlInput(const hrt_abstime &timestamp_sample);
 	void		UpdateManualSwitches(const hrt_abstime &timestamp_sample);
 
 	/**
@@ -119,7 +120,6 @@ private:
 	/**
 	 * Get switch position for specified function.
 	 */
-	switch_pos_t	get_rc_sw3pos_position(uint8_t func, float on_th, float mid_th) const;
 	switch_pos_t	get_rc_sw2pos_position(uint8_t func, float on_th) const;
 
 	/**
@@ -129,6 +129,8 @@ private:
 	 * @param
 	 */
 	void		set_params_from_rc();
+
+	void		map_flight_modes_buttons();
 
 	static constexpr uint8_t RC_MAX_CHAN_COUNT{input_rc_s::RC_INPUT_MAX_CHANNELS}; /**< maximum number of r/c channels we handle */
 
@@ -161,12 +163,10 @@ private:
 	uORB::SubscriptionInterval _parameter_update_sub{ORB_ID(parameter_update), 1_s};
 
 	uORB::Subscription _rc_parameter_map_sub{ORB_ID(rc_parameter_map)};
-	uORB::Subscription _actuator_controls_3_sub{ORB_ID(actuator_controls_3)};
 
 	uORB::Publication<rc_channels_s> _rc_channels_pub{ORB_ID(rc_channels)};
-	uORB::PublicationMulti<manual_control_setpoint_s> _manual_control_setpoint_pub{ORB_ID(manual_control_setpoint)};
+	uORB::PublicationMulti<manual_control_setpoint_s> _manual_control_input_pub{ORB_ID(manual_control_input)};
 	uORB::Publication<manual_control_switches_s> _manual_control_switches_pub{ORB_ID(manual_control_switches)};
-	uORB::Publication<actuator_controls_s> _actuator_group_3_pub{ORB_ID(actuator_controls_3)};
 
 	manual_control_switches_s _manual_switches_previous{};
 	manual_control_switches_s _manual_switches_last_publish{};
@@ -175,16 +175,20 @@ private:
 	rc_parameter_map_s _rc_parameter_map {};
 	float _param_rc_values[rc_parameter_map_s::RC_PARAM_MAP_NCHAN] {};	/**< parameter values for RC control */
 
-	hrt_abstime _last_manual_control_setpoint_publish{0};
+	hrt_abstime _last_manual_control_input_publish{0};
 	hrt_abstime _last_rc_to_param_map_time{0};
 	hrt_abstime _last_timestamp_signal{0};
 
 	uint16_t _rc_values_previous[RC_MAX_CHAN_COUNT] {};
-	float _last_manual_control_setpoint[3] {};
+	float _last_manual_control_input[3] {};
 	bool _aux_already_active[3] = {false, false, false};
 
 	uint8_t _channel_count_previous{0};
 	uint8_t _input_source_previous{input_rc_s::RC_INPUT_SOURCE_UNKNOWN};
+
+	uint8_t _potential_button_press_slot{0};
+	systemlib::Hysteresis _button_pressed_hysteresis{false};
+	systemlib::Hysteresis _rc_signal_lost_hysteresis{true};
 
 	uint8_t _channel_count_max{0};
 
@@ -201,21 +205,17 @@ private:
 		(ParamInt<px4::params::RC_MAP_FAILSAFE>) _param_rc_map_failsafe,
 
 		(ParamInt<px4::params::RC_MAP_FLTMODE>) _param_rc_map_fltmode,
-		(ParamInt<px4::params::RC_MAP_MODE_SW>) _param_rc_map_mode_sw,
 
 		(ParamInt<px4::params::RC_MAP_FLAPS>) _param_rc_map_flaps,
 
 		(ParamInt<px4::params::RC_MAP_RETURN_SW>) _param_rc_map_return_sw,
-		(ParamInt<px4::params::RC_MAP_POSCTL_SW>) _param_rc_map_posctl_sw,
 		(ParamInt<px4::params::RC_MAP_LOITER_SW>) _param_rc_map_loiter_sw,
-		(ParamInt<px4::params::RC_MAP_ACRO_SW>) _param_rc_map_acro_sw,
 		(ParamInt<px4::params::RC_MAP_OFFB_SW>) _param_rc_map_offb_sw,
 		(ParamInt<px4::params::RC_MAP_KILL_SW>) _param_rc_map_kill_sw,
 		(ParamInt<px4::params::RC_MAP_ARM_SW>) _param_rc_map_arm_sw,
 		(ParamInt<px4::params::RC_MAP_TRANS_SW>) _param_rc_map_trans_sw,
 		(ParamInt<px4::params::RC_MAP_GEAR_SW>) _param_rc_map_gear_sw,
-		(ParamInt<px4::params::RC_MAP_STAB_SW>) _param_rc_map_stab_sw,
-		(ParamInt<px4::params::RC_MAP_MAN_SW>) _param_rc_map_man_sw,
+		(ParamInt<px4::params::RC_MAP_FLTM_BTN>) _param_rc_map_fltm_btn,
 
 		(ParamInt<px4::params::RC_MAP_AUX1>) _param_rc_map_aux1,
 		(ParamInt<px4::params::RC_MAP_AUX2>) _param_rc_map_aux2,
@@ -224,23 +224,20 @@ private:
 		(ParamInt<px4::params::RC_MAP_AUX5>) _param_rc_map_aux5,
 		(ParamInt<px4::params::RC_MAP_AUX6>) _param_rc_map_aux6,
 
+		(ParamInt<px4::params::RC_MAP_ENG_MOT>) _param_rc_map_eng_mot,
+
 		(ParamInt<px4::params::RC_FAILS_THR>) _param_rc_fails_thr,
 
-		(ParamFloat<px4::params::RC_ASSIST_TH>) _param_rc_assist_th,
-		(ParamFloat<px4::params::RC_AUTO_TH>) _param_rc_auto_th,
-		(ParamFloat<px4::params::RC_POSCTL_TH>) _param_rc_posctl_th,
 		(ParamFloat<px4::params::RC_LOITER_TH>) _param_rc_loiter_th,
-		(ParamFloat<px4::params::RC_ACRO_TH>) _param_rc_acro_th,
 		(ParamFloat<px4::params::RC_OFFB_TH>) _param_rc_offb_th,
 		(ParamFloat<px4::params::RC_KILLSWITCH_TH>) _param_rc_killswitch_th,
 		(ParamFloat<px4::params::RC_ARMSWITCH_TH>) _param_rc_armswitch_th,
 		(ParamFloat<px4::params::RC_TRANS_TH>) _param_rc_trans_th,
 		(ParamFloat<px4::params::RC_GEAR_TH>) _param_rc_gear_th,
-		(ParamFloat<px4::params::RC_STAB_TH>) _param_rc_stab_th,
-		(ParamFloat<px4::params::RC_MAN_TH>) _param_rc_man_th,
 		(ParamFloat<px4::params::RC_RETURN_TH>) _param_rc_return_th,
+		(ParamFloat<px4::params::RC_ENG_MOT_TH>) _param_rc_eng_mot_th,
 
 		(ParamInt<px4::params::RC_CHAN_CNT>) _param_rc_chan_cnt
 	)
 };
-} /* namespace RCUpdate */
+} /* namespace rc_update */

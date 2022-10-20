@@ -1,6 +1,6 @@
 /****************************************************************************
  *
- *   Copyright (c) 2018 PX4 Development Team. All rights reserved.
+ *   Copyright (c) 2018, 2021 PX4 Development Team. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -49,7 +49,9 @@
 #include <nuttx/config.h>
 #include <board_config.h>
 
+#include <inttypes.h>
 #include <stdbool.h>
+#include <syslog.h>
 
 #include "systemlib/px4_macros.h"
 
@@ -73,24 +75,61 @@ static const px4_hw_mft_item_t device_unsupported = {0, 0, 0};
 // declared in board_common.h
 static const px4_hw_mft_item_t hw_mft_list_v0500[] = {
 	{
+		//  PX4_MFT_PX4IO
 		.present     = 1,
 		.mandatory   = 1,
 		.connection  = px4_hw_con_onboard,
 	},
 	{
+		// PX4_MFT_USB
+		.present     = 1,
+		.mandatory   = 1,
+		.connection  = px4_hw_con_onboard,
+	},
+	{
+		// PX4_MFT_CAN2
 		.present     = 1,
 		.mandatory   = 1,
 		.connection  = px4_hw_con_onboard,
 	},
 };
 
+static const px4_hw_mft_item_t hw_mft_list_v0550[] = {
+	{
+		//  PX4_MFT_PX4IO
+		.present     = 1,
+		.mandatory   = 1,
+		.connection  = px4_hw_con_onboard,
+	},
+	{
+		// PX4_MFT_USB
+		.present     = 1,
+		.mandatory   = 1,
+		.connection  = px4_hw_con_onboard,
+	},
+	{
+		// PX4_MFT_CAN2
+		.present     = 0,
+		.mandatory   = 0,
+		.connection  = px4_hw_con_unknown,
+	},
+};
+
 static const px4_hw_mft_item_t hw_mft_list_v0510[] = {
 	{
+		//  PX4_MFT_PX4IO
 		.present     = 0,
 		.mandatory   = 0,
 		.connection  = px4_hw_con_unknown,
 	},
 	{
+		// PX4_MFT_USB
+		.present     = 1,
+		.mandatory   = 1,
+		.connection  = px4_hw_con_onboard,
+	},
+	{
+		// PX4_MFT_CAN2
 		.present     = 1,
 		.mandatory   = 1,
 		.connection  = px4_hw_con_onboard,
@@ -99,27 +138,43 @@ static const px4_hw_mft_item_t hw_mft_list_v0510[] = {
 
 static const px4_hw_mft_item_t hw_mft_list_v0509[] = {
 	{
+		//  PX4_MFT_PX4IO
 		.present     = 1,
 		.mandatory   = 1,
 		.connection  = px4_hw_con_onboard,
 	},
 	{
+		// PX4_MFT_USB
 		.present     = 0,
 		.mandatory   = 0,
 		.connection  = px4_hw_con_unknown,
 	},
+	{
+		// PX4_MFT_CAN2
+		.present     = 1,
+		.mandatory   = 1,
+		.connection  = px4_hw_con_onboard,
+	},
 };
 
 static px4_hw_mft_list_entry_t mft_lists[] = {
-	{0x0000, hw_mft_list_v0500, arraySize(hw_mft_list_v0500)},
-	{0x0001, hw_mft_list_v0500, arraySize(hw_mft_list_v0500)},
-	{0x0100, hw_mft_list_v0510, arraySize(hw_mft_list_v0510)},
-	{0x0900, hw_mft_list_v0509, arraySize(hw_mft_list_v0509)},
-	{0x0901, hw_mft_list_v0509, arraySize(hw_mft_list_v0509)},
-	{0x0a00, hw_mft_list_v0509, arraySize(hw_mft_list_v0509)},
-	{0x0a01, hw_mft_list_v0509, arraySize(hw_mft_list_v0509)},
+//  ver_rev
+	{V5X00, hw_mft_list_v0500, arraySize(hw_mft_list_v0500)}, // FMUV5X,                 Rev 0
+	{V5X01, hw_mft_list_v0500, arraySize(hw_mft_list_v0500)}, // FMUV5X,                 Rev 1
+	{V5X02, hw_mft_list_v0500, arraySize(hw_mft_list_v0500)}, // FMUV5X,                 Rev 2
+	{V5X10, hw_mft_list_v0510, arraySize(hw_mft_list_v0510)}, // NO PX4IO,               Rev 0
+	{V5X41, hw_mft_list_v0500, arraySize(hw_mft_list_v0500)}, // FMUV5X,  HB CM4 base    Rev 1
+	{V5X42, hw_mft_list_v0500, arraySize(hw_mft_list_v0500)}, // FMUV5X,  HB CM4 base    Rev 2
+	{V5X51, hw_mft_list_v0550, arraySize(hw_mft_list_v0550)}, // FMUV5X,   HB Mini       Rev 1
+	{V5X52, hw_mft_list_v0550, arraySize(hw_mft_list_v0550)}, // FMUV5X,   HB Mini       Rev 2
+	{V5X90, hw_mft_list_v0509, arraySize(hw_mft_list_v0509)}, // NO USB,                 Rev 0
+	{V5X91, hw_mft_list_v0509, arraySize(hw_mft_list_v0509)}, // NO USB I2C2 BMP388,     Rev 1
+	{V5X92, hw_mft_list_v0509, arraySize(hw_mft_list_v0509)}, // NO USB I2C2 BMP388,     Rev 2
+	{V5Xa0, hw_mft_list_v0509, arraySize(hw_mft_list_v0509)}, // NO USB (Q),             Rev 0
+	{V5Xa1, hw_mft_list_v0509, arraySize(hw_mft_list_v0509)}, // NO USB (Q) I2C2 BMP388, Rev 1
+	{V5Xa2, hw_mft_list_v0509, arraySize(hw_mft_list_v0509)}, // NO USB (Q) I2C2 BMP388, Rev 2
+	{V5X101, hw_mft_list_v0509, arraySize(hw_mft_list_v0509)}, // NO USB I2C2 BMP388,     Rev 1
 };
-
 
 /************************************************************************************
  * Name: board_query_manifest
@@ -141,7 +196,7 @@ __EXPORT px4_hw_mft_item board_query_manifest(px4_hw_mft_item_id_t id)
 	static px4_hw_mft_list_entry boards_manifest = px4_hw_mft_list_uninitialized;
 
 	if (boards_manifest == px4_hw_mft_list_uninitialized) {
-		uint32_t ver_rev = board_get_hw_version() << 8;
+		uint32_t ver_rev = board_get_hw_version() << 16;
 		ver_rev |= board_get_hw_revision();
 
 		for (unsigned i = 0; i < arraySize(mft_lists); i++) {
@@ -152,7 +207,7 @@ __EXPORT px4_hw_mft_item board_query_manifest(px4_hw_mft_item_id_t id)
 		}
 
 		if (boards_manifest == px4_hw_mft_list_uninitialized) {
-			syslog(LOG_ERR, "[boot] Board %4x is not supported!\n", ver_rev);
+			syslog(LOG_ERR, "[boot] Board %08"  PRIx32 " is not supported!\n", ver_rev);
 		}
 	}
 

@@ -51,7 +51,6 @@
 extern "C" __EXPORT int rpm_simulator_main(int argc, char *argv[]);
 int rpm_simulator_main(int argc, char *argv[])
 {
-
 	// check input
 	if (argc != 2) {
 		PX4_INFO("Usage: rpm_simulator <published RPM>");
@@ -72,7 +71,7 @@ int rpm_simulator_main(int argc, char *argv[])
 
 	// Publish data and let the user know what was published
 	rpm_pub.publish(rpm);
-	print_message(rpm);
+	print_message(ORB_ID(rpm), rpm);
 
 	return 0;
 }

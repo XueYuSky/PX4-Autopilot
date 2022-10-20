@@ -275,6 +275,8 @@ static void		hrt_call_enter(struct hrt_call *entry);
 static void		hrt_call_reschedule(void);
 static void		hrt_call_invoke(void);
 
+
+int hrt_ioctl(unsigned int cmd, unsigned long arg);
 /*
  * Specific registers and bits used by PPM sub-functions
  */
@@ -692,46 +694,6 @@ hrt_absolute_time(void)
 	px4_leave_critical_section(flags);
 
 	return abstime;
-}
-
-/**
- * Convert a timespec to absolute time
- */
-hrt_abstime
-ts_to_abstime(const struct timespec *ts)
-{
-	hrt_abstime	result;
-
-	result = (hrt_abstime)(ts->tv_sec) * 1000000;
-	result += ts->tv_nsec / 1000;
-
-	return result;
-}
-
-/**
- * Convert absolute time to a timespec.
- */
-void
-abstime_to_ts(struct timespec *ts, hrt_abstime abstime)
-{
-	ts->tv_sec = abstime / 1000000;
-	abstime -= ts->tv_sec * 1000000;
-	ts->tv_nsec = abstime * 1000;
-}
-
-/**
- * Compare a time value with the current time as atomic operation
- */
-hrt_abstime
-hrt_elapsed_time_atomic(const volatile hrt_abstime *then)
-{
-	irqstate_t flags = px4_enter_critical_section();
-
-	hrt_abstime delta = hrt_absolute_time() - *then;
-
-	px4_leave_critical_section(flags);
-
-	return delta;
 }
 
 /**

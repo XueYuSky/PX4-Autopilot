@@ -41,7 +41,7 @@
 
 #include "FlightTask.hpp"
 #include "Sticks.hpp"
-#include <lib/ecl/AlphaFilter/AlphaFilter.hpp>
+#include <lib/mathlib/math/filter/AlphaFilter.hpp>
 #include <uORB/Subscription.hpp>
 
 class FlightTaskManualAltitude : public FlightTask
@@ -49,7 +49,7 @@ class FlightTaskManualAltitude : public FlightTask
 public:
 	FlightTaskManualAltitude();
 	virtual ~FlightTaskManualAltitude() = default;
-	bool activate(const vehicle_local_position_setpoint_s &last_setpoint) override;
+	bool activate(const trajectory_setpoint_s &last_setpoint) override;
 	bool updateInitialize() override;
 	bool update() override;
 
@@ -85,7 +85,7 @@ protected:
 					(ParamFloat<px4::params::MPC_MAN_Y_TAU>) _param_mpc_man_y_tau,
 					(ParamFloat<px4::params::MPC_MAN_TILT_MAX>) _param_mpc_man_tilt_max, /**< maximum tilt allowed for manual flight */
 					(ParamFloat<px4::params::MPC_LAND_ALT1>) _param_mpc_land_alt1, /**< altitude at which to start downwards slowdown */
-					(ParamFloat<px4::params::MPC_LAND_ALT2>) _param_mpc_land_alt2, /**< altitude below wich to land with land speed */
+					(ParamFloat<px4::params::MPC_LAND_ALT2>) _param_mpc_land_alt2, /**< altitude below which to land with land speed */
 					(ParamFloat<px4::params::MPC_LAND_SPEED>)
 					_param_mpc_land_speed, /**< desired downwards speed when approaching the ground */
 					(ParamFloat<px4::params::MPC_TKO_SPEED>)
@@ -134,8 +134,6 @@ private:
 
 	float _yawspeed_filter_state{}; /**< state of low-pass filter in rad/s */
 	uint8_t _reset_counter = 0; /**< counter for estimator resets in z-direction */
-	float _max_speed_up = 10.0f;
-	float _max_speed_down = 1.0f;
 	bool _terrain_follow{false}; /**< true when the vehicle is following the terrain height */
 	bool _terrain_hold{false}; /**< true when vehicle is controlling height above a static ground position */
 

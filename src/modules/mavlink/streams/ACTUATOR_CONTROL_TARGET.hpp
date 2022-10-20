@@ -53,10 +53,9 @@ public:
 
 		case 2:
 			return "ACTUATOR_CONTROL_TARGET2";
-
-		case 3:
-			return "ACTUATOR_CONTROL_TARGET3";
 		}
+
+		return "ACTUATOR_CONTROL_TARGET";
 	}
 
 	static constexpr uint16_t get_id_static() { return MAVLINK_MSG_ID_ACTUATOR_CONTROL_TARGET; }
@@ -85,10 +84,6 @@ private:
 
 		case 2:
 			_act_ctrl_sub = new uORB::Subscription{ORB_ID(actuator_controls_2)};
-			break;
-
-		case 3:
-			_act_ctrl_sub = new uORB::Subscription{ORB_ID(actuator_controls_3)};
 			break;
 		}
 	}

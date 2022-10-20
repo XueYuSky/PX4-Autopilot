@@ -34,9 +34,9 @@
 add_subdirectory(airframes)
 
 px4_add_romfs_files(
+	px4-rc.mavlink
 	px4-rc.params
 	px4-rc.simulator
-	px4-rc.mavlink
 	rc.replay
 	rcS
 )

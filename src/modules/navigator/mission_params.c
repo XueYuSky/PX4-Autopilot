@@ -87,7 +87,7 @@ PARAM_DEFINE_FLOAT(MIS_LTRMIN_ALT, -1.0f);
  *
  * Failsafe check to prevent running mission stored from previous flight at a new takeoff location.
  * Set a value of zero or less to disable. The mission will not be started if the current
- * waypoint is more distant than MIS_DIS_1WP from the home position.
+ * waypoint is more distant than MIS_DIST_1WP from the home position.
  *
  * @unit m
  * @min 0
@@ -156,3 +156,14 @@ PARAM_DEFINE_FLOAT(MIS_YAW_TMT, -1.0f);
  * @group Mission
  */
 PARAM_DEFINE_FLOAT(MIS_YAW_ERR, 12.0f);
+
+/**
+ * Timeout for a successful payload deployment acknowledgement
+ *
+ * @unit s
+ * @min 0
+ * @decimal 1
+ * @increment 1
+ * @group Mission
+ */
+PARAM_DEFINE_FLOAT(MIS_PD_TO, 5.0f);

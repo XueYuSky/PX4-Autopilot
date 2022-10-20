@@ -5,7 +5,7 @@
 #include <px4_platform_common/module_params.h>
 #include <px4_platform_common/posix.h>
 #include <lib/controllib/blocks.hpp>
-#include <lib/ecl/geo/geo.h>
+#include <lib/geo/geo.h>
 #include <lib/mathlib/mathlib.h>
 #include <matrix/Matrix.hpp>
 
@@ -20,12 +20,12 @@
 #include <uORB/topics/vehicle_control_mode.h>
 #include <uORB/topics/vehicle_attitude.h>
 #include <uORB/topics/vehicle_attitude_setpoint.h>
-#include <uORB/topics/optical_flow.h>
+#include <uORB/topics/vehicle_optical_flow.h>
 #include <uORB/topics/sensor_combined.h>
 #include <uORB/topics/distance_sensor.h>
 #include <uORB/topics/parameter_update.h>
 #include <uORB/topics/manual_control_setpoint.h>
-#include <uORB/topics/vehicle_gps_position.h>
+#include <uORB/topics/sensor_gps.h>
 #include <uORB/topics/landing_target_pose.h>
 #include <uORB/topics/vehicle_air_data.h>
 #include <uORB/topics/vehicle_odometry.h>
@@ -270,8 +270,8 @@ private:
 	uORB::SubscriptionData<vehicle_land_detected_s> _sub_land{ORB_ID(vehicle_land_detected)};
 	uORB::SubscriptionData<vehicle_attitude_s> _sub_att{ORB_ID(vehicle_attitude)};
 	uORB::SubscriptionData<vehicle_angular_velocity_s> _sub_angular_velocity{ORB_ID(vehicle_angular_velocity)};
-	uORB::SubscriptionData<optical_flow_s> _sub_flow{ORB_ID(optical_flow)};
-	uORB::SubscriptionData<vehicle_gps_position_s> _sub_gps{ORB_ID(vehicle_gps_position)};
+	uORB::SubscriptionData<vehicle_optical_flow_s> _sub_flow{ORB_ID(vehicle_optical_flow)};
+	uORB::SubscriptionData<sensor_gps_s> _sub_gps{ORB_ID(vehicle_gps_position)};
 	uORB::SubscriptionData<vehicle_odometry_s> _sub_visual_odom{ORB_ID(vehicle_visual_odometry)};
 	uORB::SubscriptionData<vehicle_odometry_s> _sub_mocap_odom{ORB_ID(vehicle_mocap_odometry)};
 	uORB::SubscriptionData<distance_sensor_s> _sub_dist0{ORB_ID(distance_sensor), 0};
@@ -294,10 +294,10 @@ private:
 	uORB::PublicationData<estimator_innovations_s> _pub_innov_var{ORB_ID(estimator_innovation_variances)};
 
 	// map projection
-	struct map_projection_reference_s _map_ref;
+	MapProjection _map_ref;
 
-	map_projection_reference_s _global_local_proj_ref{};
-	float                      _global_local_alt0{NAN};
+	MapProjection _global_local_proj_ref{};
+	float _global_local_alt0{NAN};
 
 	// target mode paramters from landing_target_estimator module
 	enum TargetMode {

@@ -1,6 +1,6 @@
 /****************************************************************************
  *
- *   Copyright (C) 2017 PX4 Development Team. All rights reserved.
+ *   Copyright (C) 2017, 2022 PX4 Development Team. All rights reserved.
  *   Author: @author David Sidrane <david_s5@nscdg.com>
  *
  * Redistribution and use in source and binary forms, with or without
@@ -41,10 +41,14 @@
 #include <px4_arch/adc.h>
 #include <px4_platform_common/micro_hal.h>
 #include <px4_platform_common/px4_config.h>
+#include <px4_platform_common/px4_manifest.h>
 #include <px4_platform/board_determine_hw_info.h>
+#include <px4_platform/board_hw_eeprom_rev_ver.h>
 #include <stdio.h>
+#include <fcntl.h>
 #include <board_config.h>
 
+#include <systemlib/crc.h>
 #include <systemlib/px4_macros.h>
 
 #if defined(BOARD_HAS_HW_VERSIONING)
@@ -53,12 +57,16 @@
 #    define GPIO_HW_REV_DRIVE GPIO_HW_VER_REV_DRIVE
 #    define GPIO_HW_VER_DRIVE GPIO_HW_VER_REV_DRIVE
 #  endif
+
+#define HW_INFO_SIZE (int) arraySize(HW_INFO_INIT_PREFIX) + HW_INFO_VER_DIGITS + HW_INFO_REV_DIGITS
+
+
 /****************************************************************************
  * Private Data
  ****************************************************************************/
 static int hw_version = 0;
 static int hw_revision = 0;
-static char hw_info[] = HW_INFO_INIT;
+static char hw_info[HW_INFO_SIZE] = {0};
 
 /****************************************************************************
  * Protected Functions
@@ -170,7 +178,7 @@ static int read_id_dn(int *id, uint32_t gpio_drive, uint32_t gpio_sense, int adc
 
 	/*  Turn the sense lines to digital outputs LOW */
 
-	stm32_configgpio(PX4_MAKE_GPIO_OUTPUT(gpio_sense));
+	stm32_configgpio(PX4_MAKE_GPIO_OUTPUT_CLEAR(gpio_sense));
 
 
 	up_udelay(100); /* About 10 TC assuming 485 K */
@@ -182,7 +190,7 @@ static int read_id_dn(int *id, uint32_t gpio_drive, uint32_t gpio_sense, int adc
 
 	/*  Write the sense lines HIGH */
 
-	stm32_gpiowrite(PX4_MAKE_GPIO_OUTPUT(gpio_sense), 1);
+	stm32_gpiowrite(PX4_MAKE_GPIO_OUTPUT_CLEAR(gpio_sense), 1);
 
 	up_udelay(100); /* About 10 TC assuming 485 K */
 
@@ -203,7 +211,7 @@ static int read_id_dn(int *id, uint32_t gpio_drive, uint32_t gpio_sense, int adc
 	/* Are Resistors in place ?*/
 
 	uint32_t dn_sum = 0;
-	uint16_t dn = 0;
+	uint32_t dn = 0;
 
 	if ((high ^ low) && low == 0) {
 
@@ -216,14 +224,14 @@ static int read_id_dn(int *id, uint32_t gpio_drive, uint32_t gpio_sense, int adc
 			for (unsigned av = 0; av < samples; av++) {
 				dn = px4_arch_adc_sample(HW_REV_VER_ADC_BASE, adc_channel);
 
-				if (dn == 0xffff) {
+				if (dn == UINT32_MAX) {
 					break;
 				}
 
 				dn_sum  += dn;
 			}
 
-			if (dn != 0xffff) {
+			if (dn != UINT32_MAX) {
 				*id = dn_sum / samples;
 				rv = OK;
 			}
@@ -264,9 +272,9 @@ static int read_id_dn(int *id, uint32_t gpio_drive, uint32_t gpio_sense, int adc
 	 */
 
 	uint32_t dn_sum = 0;
-	uint16_t dn = 0;
-	uint16_t high = 0;
-	uint16_t low = 0;
+	uint32_t dn = 0;
+	uint32_t high = 0;
+	uint32_t low = 0;
 
 	/*  Turn the drive lines to digital outputs High */
 
@@ -278,7 +286,7 @@ static int read_id_dn(int *id, uint32_t gpio_drive, uint32_t gpio_sense, int adc
 		if (px4_arch_adc_init(HW_REV_VER_ADC_BASE) == OK) {
 			dn = px4_arch_adc_sample(HW_REV_VER_ADC_BASE, adc_channel);
 
-			if (dn == 0xffff) {
+			if (dn == UINT32_MAX) {
 				break;
 			}
 
@@ -286,7 +294,7 @@ static int read_id_dn(int *id, uint32_t gpio_drive, uint32_t gpio_sense, int adc
 		}
 	}
 
-	if (dn != 0xffff) {
+	if (dn != UINT32_MAX) {
 		high = dn_sum / samples;
 	}
 
@@ -302,18 +310,18 @@ static int read_id_dn(int *id, uint32_t gpio_drive, uint32_t gpio_sense, int adc
 
 		dn = px4_arch_adc_sample(HW_REV_VER_ADC_BASE, adc_channel);
 
-		if (dn == 0xffff) {
+		if (dn == UINT32_MAX) {
 			break;
 		}
 
 		dn_sum  += dn;
 	}
 
-	if (dn != 0xffff) {
+	if (dn != UINT32_MAX) {
 		low = dn_sum / samples;
 	}
 
-	if ((high > low) && high > px4_arch_adc_dn_fullcount() - 100) {
+	if ((high > low) && high > ((px4_arch_adc_dn_fullcount() * 975) / 1000)) {
 
 		*id = low;
 		rv = OK;
@@ -437,18 +445,170 @@ __EXPORT int board_get_hw_revision()
 
 int board_determine_hw_info()
 {
+	// MFT supported?
+	const char *path;
+	int rvmft = px4_mtd_query("MTD_MFT", NULL, &path);
+
+	// Read ADC jumpering hw_info
 	int rv = determine_hw_info(&hw_revision, &hw_version);
 
 	if (rv == OK) {
 
-		hw_info[HW_INFO_INIT_REV] = board_get_hw_revision() < 10 ?
-					    board_get_hw_revision() + '0' :
-					    board_get_hw_revision() + 'a' - 10;
-		hw_info[HW_INFO_INIT_VER] = board_get_hw_version()  < 10 ?
-					    board_get_hw_version() + '0' :
-					    board_get_hw_version()  + 'a' - 10;
+		if (rvmft == OK && path != NULL && hw_version == HW_VERSION_EEPROM) {
+
+			mtd_mft_v0_t mtd_mft = {MTD_MFT_v0};
+			rv = board_get_eeprom_hw_info(path, (mtd_mft_t *)&mtd_mft);
+
+			if (rv == OK) {
+				hw_version = mtd_mft.hw_extended_ver;
+			}
+		}
+	}
+
+	if (rv == OK) {
+		snprintf(hw_info, sizeof(hw_info), HW_INFO_INIT_PREFIX HW_INFO_SUFFIX, hw_version, hw_revision);
 	}
 
 	return rv;
 }
+
+/************************************************************************************
+  * Name: board_set_eeprom_hw_info
+ *
+ * Description:
+ * Function for writing hardware info to EEPROM
+ *
+ * Input Parameters:
+ *   *mtd_mft_unk - pointer to mtd_mft to write hw_info
+ *
+ * Returned Value:
+ *    0    - Successful storing to EEPROM
+ *   -1    - Error while storing to EEPROM
+ *
+ ************************************************************************************/
+
+int board_set_eeprom_hw_info(const char *path, mtd_mft_t *mtd_mft_unk)
+{
+	if (mtd_mft_unk == NULL || path == NULL) {
+		return -EINVAL;
+	}
+
+	// Later this will be a demux on type
+	if (mtd_mft_unk->id != MTD_MFT_v0) {
+		printf("Verson is: %d, Only mft version %d is supported\n", mtd_mft_unk->id, MTD_MFT_v0);
+		return -EINVAL;
+	}
+
+	mtd_mft_v0_t *mtd_mft = (mtd_mft_v0_t *)mtd_mft_unk;
+
+	if (mtd_mft->hw_extended_ver < HW_EEPROM_VERSION_MIN) {
+		printf("hardware version for EEPROM must be greater than %x\n", HW_EEPROM_VERSION_MIN);
+		return -EINVAL;
+	}
+
+	int fd = open(path, O_WRONLY);
+
+	if (fd < 0) {
+		return -errno;
+	}
+
+	int ret_val = OK;
+
+	mtd_mft->crc = crc16_signature(CRC16_INITIAL, sizeof(*mtd_mft) - sizeof(mtd_mft->crc), (uint8_t *) mtd_mft);
+
+	if (
+		(MTD_MFT_OFFSET != lseek(fd, MTD_MFT_OFFSET, SEEK_SET)) ||
+		(sizeof(*mtd_mft) != write(fd, mtd_mft, sizeof(*mtd_mft)))
+	) {
+		ret_val = -errno;
+	}
+
+	close(fd);
+
+	return ret_val;
+}
+
+/************************************************************************************
+  * Name: board_get_eeprom_hw_info
+ *
+ * Description:
+ * Function for reading hardware info from EEPROM
+ *
+ * Output Parameters:
+ *   *mtd_mft - pointer to mtd_mft to read hw_info
+ *
+ * Returned Value:
+ *    0    - Successful reading from EEPROM
+ *   -1    - Error while reading from EEPROM
+ *
+ ************************************************************************************/
+__EXPORT int board_get_eeprom_hw_info(const char *path, mtd_mft_t *mtd_mft)
+{
+	if (mtd_mft == NULL || path == NULL) {
+		return -EINVAL;
+	}
+
+	int fd = open(path, O_RDONLY);
+
+	if (fd < 0) {
+		return -errno;
+	}
+
+	int ret_val = OK;
+	mtd_mft_t format_version = {-1};
+
+	if (
+		(MTD_MFT_OFFSET != lseek(fd, MTD_MFT_OFFSET, SEEK_SET)) ||
+		(sizeof(format_version) != read(fd, &format_version, sizeof(format_version)))
+	) {
+		ret_val = -errno;
+
+	} else if (format_version.id != mtd_mft->id) {
+		ret_val = -EPROTO;
+
+	} else {
+
+		uint16_t mft_size = 0;
+
+		switch (format_version.id) {
+		case MTD_MFT_v0: mft_size = sizeof(mtd_mft_v0_t); break;
+
+		case MTD_MFT_v1: mft_size = sizeof(mtd_mft_v1_t); break;
+
+		default:
+			printf("[boot] Error, unknown version %d of mtd_mft in EEPROM\n", format_version.id);
+			ret_val = -1;
+			break;
+		}
+
+		if (ret_val == OK) {
+
+			if (
+				(MTD_MFT_OFFSET != lseek(fd, MTD_MFT_OFFSET, SEEK_SET)) ||
+				(mft_size != read(fd, mtd_mft, mft_size))
+			) {
+				ret_val = -errno;
+
+			} else {
+
+				union {
+					uint16_t w;
+					uint8_t  b[2];
+				} crc;
+
+				uint8_t *bytes = (uint8_t *) mtd_mft;
+				crc.w = crc16_signature(CRC16_INITIAL, mft_size - sizeof(crc), bytes);
+				uint8_t *eeprom_crc = &bytes[mft_size - sizeof(crc)];
+
+				if (!(crc.b[0] == eeprom_crc[0] && crc.b[1] == eeprom_crc[1])) {
+					ret_val = -1;
+				}
+			}
+		}
+	}
+
+	close(fd);
+	return ret_val;
+}
+
 #endif

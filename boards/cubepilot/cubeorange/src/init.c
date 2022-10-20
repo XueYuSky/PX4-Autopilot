@@ -43,6 +43,8 @@
 
 #include "board_config.h"
 
+#include <syslog.h>
+
 #include <nuttx/config.h>
 #include <nuttx/board.h>
 #include <nuttx/sdio.h>
@@ -57,6 +59,8 @@
 #include <px4_platform_common/init.h>
 #include <px4_platform/gpio.h>
 #include <px4_platform/board_dma_alloc.h>
+
+#include <mpu.h>
 
 __BEGIN_DECLS
 extern void led_init(void);
@@ -97,7 +101,7 @@ __EXPORT void board_peripheral_reset(int ms)
 __EXPORT void board_on_reset(int status)
 {
 	for (int i = 0; i < DIRECT_PWM_OUTPUT_CHANNELS; ++i) {
-		px4_arch_configgpio(PX4_MAKE_GPIO_INPUT_PULL_DOWN(io_timer_channel_get_as_pwm_input(i)));
+		px4_arch_configgpio(PX4_MAKE_GPIO_INPUT(io_timer_channel_get_as_pwm_input(i)));
 	}
 
 	if (status >= 0) {
@@ -177,12 +181,10 @@ __EXPORT int board_app_initialize(uintptr_t arg)
 
 	if (!sdio_dev) {
 		syslog(LOG_ERR, "[boot] Failed to initialize SDIO slot %d\n", 0);
-		return ERROR;
 	}
 
 	if (mmcsd_slotinitialize(0, sdio_dev) != OK) {
 		syslog(LOG_ERR, "[boot] Failed to bind SDIO to the MMC/SD driver\n");
-		return ERROR;
 	}
 
 	/* Assume that the SD card is inserted.  What choice do we have? */

@@ -84,22 +84,6 @@ PARAM_DEFINE_INT32(SYS_AUTOCONFIG, 0);
 PARAM_DEFINE_INT32(SYS_HITL, 0);
 
 /**
- * Set restart type
- *
- * Set by px4io to indicate type of restart
- *
- * @min 0
- * @max 2
- * @value 0 Data survives resets
- * @value 1 Data survives in-flight resets only
- * @value 2 Data does not survive reset
- * @category system
- * @volatile
- * @group System
- */
-PARAM_DEFINE_INT32(SYS_RESTART_TYPE, 2);
-
-/**
  * Set multicopter estimator group
  *
  * Set the group of estimators used for multicopters and VTOLs
@@ -162,7 +146,7 @@ PARAM_DEFINE_INT32(SYS_CAL_BARO, 0);
  * Required temperature rise during thermal calibration
  *
  * A temperature increase greater than this value is required during calibration.
- * Calibration will complete for each sensor when the temperature increase above the starting temeprature exceeds the value set by SYS_CAL_TDEL.
+ * Calibration will complete for each sensor when the temperature increase above the starting temperature exceeds the value set by SYS_CAL_TDEL.
  * If the temperature rise is insufficient, the calibration will continue indefinitely and the board will need to be repowered to exit.
  *
  * @unit celcius
@@ -192,6 +176,20 @@ PARAM_DEFINE_INT32(SYS_CAL_TMIN, 5);
 PARAM_DEFINE_INT32(SYS_CAL_TMAX, 10);
 
 /**
+ * Control if the vehicle has a GPS
+ *
+ * Disable this if the system has no GPS.
+ * If disabled, the sensors hub will not process sensor_gps,
+ * and GPS will not be available for the rest of the system.
+ *
+ * @boolean
+ * @reboot_required true
+ *
+ * @group System
+ */
+PARAM_DEFINE_INT32(SYS_HAS_GPS, 1);
+
+/**
  * Control if the vehicle has a magnetometer
  *
  * Disable this if the board has no magnetometer, such as the Omnibus F4 SD.
@@ -219,6 +217,21 @@ PARAM_DEFINE_INT32(SYS_HAS_MAG, 1);
  * @group System
  */
 PARAM_DEFINE_INT32(SYS_HAS_BARO, 1);
+
+/**
+ * Control the number of distance sensors on the vehicle
+ *
+ * If set to the number of distance sensors, the preflight check will check
+ * for their presence and valid data publication. Disable with 0 if no distance
+ * sensor present or to disable the preflight check.
+ *
+ * @reboot_required true
+ *
+ * @group System
+ * @min 0
+ * @max 4
+ */
+PARAM_DEFINE_INT32(SYS_HAS_NUM_DIST, 0);
 
 /**
  * Enable factory calibration mode

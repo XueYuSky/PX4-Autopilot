@@ -13,15 +13,42 @@
 
 . ${R}etc/init.d/rc.uuv_defaults
 
-
-#Set data link loss failsafe mode (0: disabled)
-param set-default NAV_DLL_ACT 0
-
 # disable circuit breaker for airspeed sensor
 param set-default CBRK_AIRSPD_CHK 162128
 
-#param set CBRK_GPSFAIL 240024
-set MAV_TYPE 12
-param set MAV_TYPE ${MAV_TYPE}
+param set-default CA_AIRFRAME 7
+param set-default CA_ROTOR_COUNT 4
+param set-default CA_R_REV 255
+param set-default CA_ROTOR0_AX 1
+param set-default CA_ROTOR0_AY 0
+param set-default CA_ROTOR0_AZ 0
+param set-default CA_ROTOR0_KM 0
+param set-default CA_ROTOR0_PX 0
+param set-default CA_ROTOR0_PY -0.3
+param set-default CA_ROTOR0_PZ -0.3
+param set-default CA_ROTOR1_AX 1
+param set-default CA_ROTOR1_AY 0
+param set-default CA_ROTOR1_AZ 0
+param set-default CA_ROTOR1_KM 0
+param set-default CA_ROTOR1_PX 0
+param set-default CA_ROTOR1_PY 0.3
+param set-default CA_ROTOR1_PZ -0.3
+param set-default CA_ROTOR2_AX 1
+param set-default CA_ROTOR2_AY 0
+param set-default CA_ROTOR2_AZ 0
+param set-default CA_ROTOR2_KM 0
+param set-default CA_ROTOR2_PX 0
+param set-default CA_ROTOR2_PY 0.3
+param set-default CA_ROTOR2_PZ 0.3
+param set-default CA_ROTOR3_AX 1
+param set-default CA_ROTOR3_AY 0
+param set-default CA_ROTOR3_AZ 0
+param set-default CA_ROTOR3_KM 0
+param set-default CA_ROTOR3_PX 0
+param set-default CA_ROTOR3_PY -0.3
+param set-default CA_ROTOR3_PZ 0.3
 
-set MIXER uuv_x
+param set-default PWM_MAIN_FUNC1 101
+param set-default PWM_MAIN_FUNC2 102
+param set-default PWM_MAIN_FUNC3 103
+param set-default PWM_MAIN_FUNC4 104

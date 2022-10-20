@@ -1,6 +1,6 @@
 /****************************************************************************
  *
- *   Copyright (c) 2020 PX4 Development Team. All rights reserved.
+ *   Copyright (c) 2020-2021 PX4 Development Team. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -54,7 +54,7 @@ static constexpr uint8_t Bit5 = (1 << 5);
 static constexpr uint8_t Bit6 = (1 << 6);
 static constexpr uint8_t Bit7 = (1 << 7);
 
-static constexpr uint32_t I2C_ADDRESS_DEFAULT = 0x69; // 0b110100X
+static constexpr uint8_t I2C_ADDRESSES[] {0b110'1000, 0b110'1001}; // 0b110'100x (0x68 or 0x69)
 static constexpr uint32_t I2C_SPEED = 400 * 1000;
 
 static constexpr uint32_t SPI_SPEED = 1 * 1000 * 1000;
@@ -67,6 +67,7 @@ static constexpr float TEMPERATURE_SENSITIVITY = 333.87f; // LSB/C
 static constexpr float TEMPERATURE_OFFSET = 21.f; // C
 
 enum class Register : uint8_t {
+
 	CONFIG             = 0x1A,
 	GYRO_CONFIG        = 0x1B,
 	ACCEL_CONFIG       = 0x1C,
@@ -102,6 +103,15 @@ enum class Register : uint8_t {
 	FIFO_COUNTL        = 0x73,
 	FIFO_R_W           = 0x74,
 	WHO_AM_I           = 0x75,
+
+	XA_OFFSET_H        = 0x77,
+	XA_OFFSET_L        = 0x78,
+
+	YA_OFFSET_H        = 0x7A,
+	YA_OFFSET_L        = 0x7B,
+
+	ZA_OFFSET_H        = 0x7D,
+	ZA_OFFSET_L        = 0x7E,
 };
 
 // CONFIG
@@ -122,7 +132,7 @@ enum GYRO_CONFIG_BIT : uint8_t {
 	GYRO_FS_SEL_2000_DPS	= Bit4 | Bit3, // 0b11000
 
 	// FCHOICE_B [1:0]
-	FCHOICE_B_BYPASS_DLPF   = Bit1 | Bit0, // 0b00 - 3-dB BW: 3281 Noise BW (Hz): 3451.0   8 kHz
+	FCHOICE_B_BYPASS_DLPF  = Bit1 | Bit0, // 0b00 - 3-dB BW: 3281 Noise BW (Hz): 3451.0   8 kHz
 };
 
 // ACCEL_CONFIG

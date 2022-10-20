@@ -41,6 +41,7 @@
 #pragma once
 
 #include <cstdint>
+#include <cstddef>
 
 namespace InvenSense_ICM20948
 {
@@ -54,8 +55,8 @@ static constexpr uint8_t Bit5 = (1 << 5);
 static constexpr uint8_t Bit6 = (1 << 6);
 static constexpr uint8_t Bit7 = (1 << 7);
 
-static constexpr uint32_t I2C_SPEED = 400 * 1000; // 400 kHz I2C serial interface
-static constexpr uint8_t I2C_ADDRESS_DEFAULT = 0b1101001;
+static constexpr uint32_t I2C_SPEED = 100 * 1000; // 100 kHz I2C serial interface
+static constexpr uint8_t I2C_ADDRESS_DEFAULT = 0x69; // 0b1101001
 
 static constexpr uint32_t SPI_SPEED = 7 * 1000 * 1000; // 7 MHz SPI
 static constexpr uint8_t DIR_READ = 0x80;
@@ -64,6 +65,8 @@ static constexpr uint8_t WHOAMI = 0xEA;
 
 static constexpr float TEMPERATURE_SENSITIVITY = 333.87f; // LSB/C
 static constexpr float TEMPERATURE_OFFSET = 21.f; // C
+static constexpr float TEMPERATURE_SENSOR_MIN = -40.f; // °C
+static constexpr float TEMPERATURE_SENSOR_MAX = 85.f; // °C
 
 namespace Register
 {
@@ -144,6 +147,7 @@ enum PWR_MGMT_1_BIT : uint8_t {
 	DEVICE_RESET = Bit7,
 	SLEEP        = Bit6,
 
+	TEMP_DIS     = Bit3,
 	CLKSEL_2     = Bit2,
 	CLKSEL_1     = Bit1,
 	CLKSEL_0     = Bit0,

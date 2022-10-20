@@ -12,6 +12,10 @@ ekf2 start &
 #attitude_estimator_q start
 #local_position_estimator start
 
+#
+# Start Control Allocator
+#
+control_allocator start
 
 #
 # Start attitude controllers.

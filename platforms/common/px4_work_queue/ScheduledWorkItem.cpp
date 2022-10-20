@@ -31,6 +31,7 @@
  *
  ****************************************************************************/
 
+#include <px4_platform_common/log.h>
 #include <px4_platform_common/px4_work_queue/ScheduledWorkItem.hpp>
 
 namespace px4
@@ -38,7 +39,9 @@ namespace px4
 
 ScheduledWorkItem::~ScheduledWorkItem()
 {
-	ScheduleClear();
+	if (_call.arg != nullptr) {
+		ScheduleClear();
+	}
 }
 
 void ScheduledWorkItem::schedule_trampoline(void *arg)
@@ -72,7 +75,7 @@ void ScheduledWorkItem::ScheduleClear()
 void ScheduledWorkItem::print_run_status()
 {
 	if (_call.period > 0) {
-		PX4_INFO_RAW("%-26s %8.1f Hz %12.0f us (%" PRId64 " us)\n", _item_name, (double)average_rate(),
+		PX4_INFO_RAW("%-29s %8.1f Hz %12.0f us (%" PRId64 " us)\n", _item_name, (double)average_rate(),
 			     (double)average_interval(), _call.period);
 
 	} else {

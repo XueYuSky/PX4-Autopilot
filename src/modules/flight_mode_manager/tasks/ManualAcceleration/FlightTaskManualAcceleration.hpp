@@ -43,19 +43,22 @@
 #include "FlightTaskManualAltitudeSmoothVel.hpp"
 #include "StickAccelerationXY.hpp"
 #include "StickYaw.hpp"
+#include <lib/weather_vane/WeatherVane.hpp>
 
 class FlightTaskManualAcceleration : public FlightTaskManualAltitudeSmoothVel
 {
 public:
-	FlightTaskManualAcceleration();
+	FlightTaskManualAcceleration() = default;
 	virtual ~FlightTaskManualAcceleration() = default;
-	bool activate(const vehicle_local_position_setpoint_s &last_setpoint) override;
+	bool activate(const trajectory_setpoint_s &last_setpoint) override;
 	bool update() override;
 
 private:
-	StickAccelerationXY _stick_acceleration_xy;
+	void _ekfResetHandlerPositionXY(const matrix::Vector2f &delta_xy) override;
+	void _ekfResetHandlerVelocityXY(const matrix::Vector2f &delta_vxy) override;
+
+	StickAccelerationXY _stick_acceleration_xy{this};
 	StickYaw _stick_yaw;
 
-	void _ekfResetHandlerPositionXY() override;
-	void _ekfResetHandlerVelocityXY() override;
+	WeatherVane _weathervane{this}; /**< weathervane library, used to implement a yaw control law that turns the vehicle nose into the wind */
 };

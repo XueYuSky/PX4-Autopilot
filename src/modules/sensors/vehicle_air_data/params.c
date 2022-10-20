@@ -1,6 +1,6 @@
 /****************************************************************************
  *
- *   Copyright (c) 2012-2020 PX4 Development Team. All rights reserved.
+ *   Copyright (c) 2012-2022 PX4 Development Team. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -38,9 +38,6 @@
  * @max 1500
  * @group Sensors
  * @unit hPa
- *
- * @reboot_required true
- *
  */
 PARAM_DEFINE_FLOAT(SENS_BARO_QNH, 1013.25f);
 
@@ -48,14 +45,11 @@ PARAM_DEFINE_FLOAT(SENS_BARO_QNH, 1013.25f);
  * Baro max rate.
  *
  * Barometric air data maximum publication rate. This is an upper bound,
- * actual barometric data rate is still dependant on the sensor.
+ * actual barometric data rate is still dependent on the sensor.
  *
  * @min 1
  * @max 200
  * @group Sensors
  * @unit Hz
- *
- * @reboot_required true
- *
  */
 PARAM_DEFINE_FLOAT(SENS_BARO_RATE, 20.0f);

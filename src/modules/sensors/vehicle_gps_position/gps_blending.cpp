@@ -105,14 +105,23 @@ bool GpsBlending::blend_gps_data(uint64_t hrt_now_us)
 	_np_gps_suitable_for_blending = 0;
 
 	for (uint8_t i = 0; i < GPS_MAX_RECEIVERS_BLEND; i++) {
-		const float raw_dt = 1e-6f * ((float)_gps_state[i].timestamp - (float)_time_prev_us[i]);
-		const float present_dt = 1e-6f * ((float)hrt_now_us - (float)_gps_state[i].timestamp);
+
+		float raw_dt = 0.f;
+
+		if (_gps_state[i].timestamp > _time_prev_us[i]) {
+			raw_dt = 1e-6f * (_gps_state[i].timestamp - _time_prev_us[i]);
+		}
+
+		float present_dt = 0.f;
+
+		if (hrt_now_us > _gps_state[i].timestamp) {
+			present_dt = 1e-6f * (hrt_now_us - _gps_state[i].timestamp);
+		}
 
 		if (raw_dt > 0.0f && raw_dt < GPS_TIMEOUT_S) {
 			_gps_dt[i] = 0.1f * raw_dt + 0.9f * _gps_dt[i];
 
-		} else if ((present_dt >= GPS_TIMEOUT_S)
-			   && (_gps_state[i].timestamp > 0)) {
+		} else if ((present_dt >= GPS_TIMEOUT_S) && (_gps_state[i].timestamp > 0)) {
 			// Timed out - kill the stored fix for this receiver and don't track its (stale) gps_dt
 			_gps_state[i].timestamp = 0;
 			_gps_state[i].fix_type = 0;
@@ -339,28 +348,39 @@ bool GpsBlending::blend_gps_data(uint64_t hrt_now_us)
 
 sensor_gps_s GpsBlending::gps_blend_states(float blend_weights[GPS_MAX_RECEIVERS_BLEND]) const
 {
+	// Use the GPS with the highest weighting as the reference position
+	float best_weight = 0.0f;
+
+	// index of the physical receiver with the lowest reported error
+	uint8_t gps_best_index = 0;
+
+	for (uint8_t i = 0; i < GPS_MAX_RECEIVERS_BLEND; i++) {
+		if (blend_weights[i] > best_weight) {
+			best_weight = blend_weights[i];
+			gps_best_index = i;
+		}
+	}
+
 	// initialise the blended states so we can accumulate the results using the weightings for each GPS receiver.
-	sensor_gps_s gps_blended_state{};
-	gps_blended_state.eph = FLT_MAX;
-	gps_blended_state.epv = FLT_MAX;
-	gps_blended_state.s_variance_m_s = FLT_MAX;
-	gps_blended_state.vel_ned_valid = true;
-	gps_blended_state.hdop = FLT_MAX;
-	gps_blended_state.vdop = FLT_MAX;
+	sensor_gps_s gps_blended_state{_gps_state[gps_best_index]}; // start with best GPS for all other misc fields
+
+	// zerp all fields that are an accumulated blend below
+	gps_blended_state.timestamp = 0;
+	gps_blended_state.timestamp_sample = 0;
+	gps_blended_state.vel_m_s = 0;
+	gps_blended_state.vel_n_m_s = 0;
+	gps_blended_state.vel_e_m_s = 0;
+	gps_blended_state.vel_d_m_s = 0;
 
 	// combine the the GPS states into a blended solution using the weights calculated in calc_blend_weights()
 	for (uint8_t i = 0; i < GPS_MAX_RECEIVERS_BLEND; i++) {
-		// blend the timing data
-		gps_blended_state.timestamp += (uint64_t)((double)_gps_state[i].timestamp * (double)blend_weights[i]);
-
-		// use the highest status
-		if (_gps_state[i].fix_type > gps_blended_state.fix_type) {
-			gps_blended_state.fix_type = _gps_state[i].fix_type;
-		}
-
 		// Assume blended error magnitude, DOP and sat count is equal to the best value from contributing receivers
 		// If any receiver contributing has an invalid velocity, then report blended velocity as invalid
 		if (blend_weights[i] > 0.0f) {
+
+			// blend the timing data
+			gps_blended_state.timestamp += (uint64_t)((double)_gps_state[i].timestamp * (double)blend_weights[i]);
+			gps_blended_state.timestamp_sample += (uint64_t)((double)_gps_state[i].timestamp_sample * (double)blend_weights[i]);
 
 			// calculate a blended average speed and velocity vector
 			gps_blended_state.vel_m_s += _gps_state[i].vel_m_s * blend_weights[i];
@@ -368,6 +388,8 @@ sensor_gps_s GpsBlending::gps_blend_states(float blend_weights[GPS_MAX_RECEIVERS
 			gps_blended_state.vel_e_m_s += _gps_state[i].vel_e_m_s * blend_weights[i];
 			gps_blended_state.vel_d_m_s += _gps_state[i].vel_d_m_s * blend_weights[i];
 
+
+			// use the lowest value
 			if (_gps_state[i].eph > 0.0f
 			    && _gps_state[i].eph < gps_blended_state.eph) {
 				gps_blended_state.eph = _gps_state[i].eph;
@@ -393,13 +415,18 @@ sensor_gps_s GpsBlending::gps_blend_states(float blend_weights[GPS_MAX_RECEIVERS
 				gps_blended_state.vdop = _gps_state[i].vdop;
 			}
 
-			if (_gps_state[i].satellites_used > 0
-			    && _gps_state[i].satellites_used > gps_blended_state.satellites_used) {
+
+			// use the highest status
+			if (_gps_state[i].fix_type > gps_blended_state.fix_type) {
+				gps_blended_state.fix_type = _gps_state[i].fix_type;
+			}
+
+			if (_gps_state[i].satellites_used > gps_blended_state.satellites_used) {
 				gps_blended_state.satellites_used = _gps_state[i].satellites_used;
 			}
 
-			if (!_gps_state[i].vel_ned_valid) {
-				gps_blended_state.vel_ned_valid = false;
+			if (_gps_state[i].vel_ned_valid) {
+				gps_blended_state.vel_ned_valid = true;
 			}
 		}
 
@@ -413,22 +440,6 @@ sensor_gps_s GpsBlending::gps_blend_states(float blend_weights[GPS_MAX_RECEIVERS
 	 * Calculate the instantaneous weighted average location using  available GPS instances and store in  _gps_state.
 	 * This is statistically the most likely location, but may not be stable enough for direct use by the EKF.
 	*/
-
-	// Use the GPS with the highest weighting as the reference position
-	float best_weight = 0.0f;
-
-	// index of the physical receiver with the lowest reported error
-	uint8_t gps_best_index = 0;
-
-	for (uint8_t i = 0; i < GPS_MAX_RECEIVERS_BLEND; i++) {
-		if (blend_weights[i] > best_weight) {
-			best_weight = blend_weights[i];
-			gps_best_index = i;
-			gps_blended_state.lat = _gps_state[i].lat;
-			gps_blended_state.lon = _gps_state[i].lon;
-			gps_blended_state.alt = _gps_state[i].alt;
-		}
-	}
 
 	// Convert each GPS position to a local NEU offset relative to the reference position
 	Vector2f blended_NE_offset_m{0, 0};
@@ -466,7 +477,7 @@ sensor_gps_s GpsBlending::gps_blend_states(float blend_weights[GPS_MAX_RECEIVERS
 	gps_blended_state.alt += (int32_t)blended_alt_offset_mm;
 
 	// Take GPS heading from the highest weighted receiver that is publishing a valid .heading value
-	uint8_t gps_best_yaw_index = 0;
+	int8_t gps_best_yaw_index = -1;
 	float best_yaw_weight = 0.0f;
 
 	for (uint8_t i = 0; i < GPS_MAX_RECEIVERS_BLEND; i++) {
@@ -476,8 +487,11 @@ sensor_gps_s GpsBlending::gps_blend_states(float blend_weights[GPS_MAX_RECEIVERS
 		}
 	}
 
-	gps_blended_state.heading = _gps_state[gps_best_yaw_index].heading;
-	gps_blended_state.heading_offset = _gps_state[gps_best_yaw_index].heading_offset;
+	if (gps_best_yaw_index >= 0)  {
+		gps_blended_state.heading = _gps_state[gps_best_yaw_index].heading;
+		gps_blended_state.heading_offset = _gps_state[gps_best_yaw_index].heading_offset;
+		gps_blended_state.heading_accuracy = _gps_state[gps_best_yaw_index].heading_accuracy;
+	}
 
 	return gps_blended_state;
 }
@@ -490,7 +504,7 @@ void GpsBlending::update_gps_offsets(const sensor_gps_s &gps_blended_state)
 	float omega_lpf = 1.0f / fmaxf(_blending_time_constant, 1.0f);
 
 	for (uint8_t i = 0; i < GPS_MAX_RECEIVERS_BLEND; i++) {
-		if (_gps_state[i].timestamp - _time_prev_us[i] > 0) {
+		if (_gps_state[i].timestamp > _time_prev_us[i]) {
 			// calculate the filter coefficient that achieves the time constant specified by the user adjustable parameter
 			alpha[i] = constrain(omega_lpf * 1e-6f * (float)(_gps_state[i].timestamp - _time_prev_us[i]),
 					     0.0f, 1.0f);

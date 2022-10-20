@@ -1,6 +1,6 @@
 /****************************************************************************
  *
- *   Copyright (c) 2018-2021 PX4 Development Team. All rights reserved.
+ *   Copyright (c) 2018-2022 PX4 Development Team. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -38,7 +38,6 @@
 #include <lib/parameters/param.h>
 
 using namespace time_literals;
-using matrix::Vector3f;
 
 static constexpr int32_t sum(const int16_t samples[], uint8_t len)
 {
@@ -49,6 +48,22 @@ static constexpr int32_t sum(const int16_t samples[], uint8_t len)
 	}
 
 	return sum;
+}
+
+static constexpr uint8_t clipping(const int16_t samples[], uint8_t len)
+{
+	unsigned clip_count = 0;
+
+	for (int n = 0; n < len; n++) {
+		// - consider data clipped/saturated if it's INT16_MIN/INT16_MAX or within 1
+		// - this accommodates rotated data (|INT16_MIN| = INT16_MAX + 1)
+		//   and sensors that may re-use the lowest bit for other purposes (sync indicator, etc)
+		if ((samples[n] <= INT16_MIN + 1) || (samples[n] >= INT16_MAX - 1)) {
+			clip_count++;
+		}
+	}
+
+	return clip_count;
 }
 
 PX4Gyroscope::PX4Gyroscope(uint32_t device_id, enum Rotation rotation) :
@@ -91,6 +106,8 @@ void PX4Gyroscope::set_scale(float scale)
 		}
 
 		_scale = scale;
+
+		UpdateClipLimit();
 	}
 }
 
@@ -108,6 +125,9 @@ void PX4Gyroscope::update(const hrt_abstime &timestamp_sample, float x, float y,
 	report.x = x * _scale;
 	report.y = y * _scale;
 	report.z = z * _scale;
+	report.clip_counter[0] = (fabsf(x) >= _clip_limit);
+	report.clip_counter[1] = (fabsf(y) >= _clip_limit);
+	report.clip_counter[2] = (fabsf(z) >= _clip_limit);
 	report.samples = 1;
 	report.timestamp = hrt_absolute_time();
 
@@ -129,31 +149,34 @@ void PX4Gyroscope::updateFIFO(sensor_gyro_fifo_s &sample)
 	_sensor_fifo_pub.publish(sample);
 
 
-	// trapezoidal integration (equally spaced, scaled by dt later)
-	const Vector3f integral{
-		(0.5f * (_last_sample[0] + sample.x[N - 1]) + sum(sample.x, N - 1)),
-		(0.5f * (_last_sample[1] + sample.y[N - 1]) + sum(sample.y, N - 1)),
-		(0.5f * (_last_sample[2] + sample.z[N - 1]) + sum(sample.z, N - 1)),
-	};
+	// publish
+	sensor_gyro_s report;
+	report.timestamp_sample = sample.timestamp_sample;
+	report.device_id = _device_id;
+	report.temperature = _temperature;
+	report.error_count = _error_count;
+
+	// trapezoidal integration (equally spaced)
+	const float scale = _scale / (float)N;
+	report.x = (0.5f * (_last_sample[0] + sample.x[N - 1]) + sum(sample.x, N - 1)) * scale;
+	report.y = (0.5f * (_last_sample[1] + sample.y[N - 1]) + sum(sample.y, N - 1)) * scale;
+	report.z = (0.5f * (_last_sample[2] + sample.z[N - 1]) + sum(sample.z, N - 1)) * scale;
 
 	_last_sample[0] = sample.x[N - 1];
 	_last_sample[1] = sample.y[N - 1];
 	_last_sample[2] = sample.z[N - 1];
 
-
-	const float scale = _scale / N;
-
-	sensor_gyro_s report;
-
-	report.timestamp_sample = sample.timestamp_sample;
-	report.device_id = _device_id;
-	report.temperature = _temperature;
-	report.error_count = _error_count;
-	report.x = integral(0) * scale;
-	report.y = integral(1) * scale;
-	report.z = integral(2) * scale;
+	report.clip_counter[0] = clipping(sample.x, N);
+	report.clip_counter[1] = clipping(sample.y, N);
+	report.clip_counter[2] = clipping(sample.z, N);
 	report.samples = N;
 	report.timestamp = hrt_absolute_time();
 
 	_sensor_pub.publish(report);
+}
+
+void PX4Gyroscope::UpdateClipLimit()
+{
+	// 99.9% of potential max
+	_clip_limit = math::constrain((_range / _scale) * 0.999f, 0.f, (float)INT16_MAX);
 }

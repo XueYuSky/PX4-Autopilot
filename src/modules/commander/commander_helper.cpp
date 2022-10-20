@@ -69,16 +69,16 @@
 #define VEHICLE_TYPE_COAXIAL 3
 #define VEHICLE_TYPE_HELICOPTER 4
 #define VEHICLE_TYPE_GROUND_ROVER 10
+#define VEHICLE_TYPE_BOAT 11
+#define VEHICLE_TYPE_SUBMARINE 12
 #define VEHICLE_TYPE_HEXAROTOR 13
 #define VEHICLE_TYPE_OCTOROTOR 14
 #define VEHICLE_TYPE_TRICOPTER 15
-#define VEHICLE_TYPE_VTOL_DUOROTOR 19
-#define VEHICLE_TYPE_VTOL_QUADROTOR 20
+#define VEHICLE_TYPE_VTOL_TAILSITTER_DUOROTOR 19
+#define VEHICLE_TYPE_VTOL_TAILSITTER_QUADROTOR 20
 #define VEHICLE_TYPE_VTOL_TILTROTOR 21
-#define VEHICLE_TYPE_VTOL_RESERVED2 22
-#define VEHICLE_TYPE_VTOL_RESERVED3 23
-#define VEHICLE_TYPE_VTOL_RESERVED4 24
-#define VEHICLE_TYPE_VTOL_RESERVED5 25
+#define VEHICLE_TYPE_VTOL_FIXEDROTOR 22 // VTOL standard
+#define VEHICLE_TYPE_VTOL_TAILSITTER 23
 
 #define BLINK_MSG_TIME	700000	// 3 fast blinks (in us)
 
@@ -92,25 +92,25 @@ bool is_multirotor(const vehicle_status_s &current_status)
 
 bool is_rotary_wing(const vehicle_status_s &current_status)
 {
-	return is_multirotor(current_status) || (current_status.system_type == VEHICLE_TYPE_HELICOPTER)
+	return is_multirotor(current_status)
+	       || (current_status.system_type == VEHICLE_TYPE_HELICOPTER)
 	       || (current_status.system_type == VEHICLE_TYPE_COAXIAL);
 }
 
 bool is_vtol(const vehicle_status_s &current_status)
 {
-	return (current_status.system_type == VEHICLE_TYPE_VTOL_DUOROTOR ||
-		current_status.system_type == VEHICLE_TYPE_VTOL_QUADROTOR ||
+	return (current_status.system_type == VEHICLE_TYPE_VTOL_TAILSITTER_DUOROTOR ||
+		current_status.system_type == VEHICLE_TYPE_VTOL_TAILSITTER_QUADROTOR ||
 		current_status.system_type == VEHICLE_TYPE_VTOL_TILTROTOR ||
-		current_status.system_type == VEHICLE_TYPE_VTOL_RESERVED2 ||
-		current_status.system_type == VEHICLE_TYPE_VTOL_RESERVED3 ||
-		current_status.system_type == VEHICLE_TYPE_VTOL_RESERVED4 ||
-		current_status.system_type == VEHICLE_TYPE_VTOL_RESERVED5);
+		current_status.system_type == VEHICLE_TYPE_VTOL_FIXEDROTOR ||
+		current_status.system_type == VEHICLE_TYPE_VTOL_TAILSITTER);
 }
 
 bool is_vtol_tailsitter(const vehicle_status_s &current_status)
 {
-	return (current_status.system_type == VEHICLE_TYPE_VTOL_DUOROTOR ||
-		current_status.system_type == VEHICLE_TYPE_VTOL_QUADROTOR);
+	return (current_status.system_type == VEHICLE_TYPE_VTOL_TAILSITTER_DUOROTOR ||
+		current_status.system_type == VEHICLE_TYPE_VTOL_TAILSITTER_QUADROTOR ||
+		current_status.system_type == VEHICLE_TYPE_VTOL_TAILSITTER);
 }
 
 bool is_fixed_wing(const vehicle_status_s &current_status)
@@ -123,17 +123,35 @@ bool is_ground_rover(const vehicle_status_s &current_status)
 	return current_status.system_type == VEHICLE_TYPE_GROUND_ROVER;
 }
 
-static hrt_abstime blink_msg_end = 0; // end time for currently blinking LED message, 0 if no blink message
-static hrt_abstime tune_end = 0; // end time of currently played tune, 0 for repeating tunes or silence
-static uint8_t tune_current = tune_control_s::TUNE_ID_STOP; // currently playing tune, can be interrupted after tune_end
-static unsigned int tune_durations[tune_control_s::NUMBER_OF_TUNES] {};
+bool is_boat(const vehicle_status_s &current_status)
+{
+	return current_status.system_type == VEHICLE_TYPE_BOAT;
+}
 
+bool is_ground_vehicle(const vehicle_status_s &current_status)
+{
+	return is_ground_rover(current_status) || is_boat(current_status);
+}
+
+// End time for currently blinking LED message, 0 if no blink message
+static hrt_abstime blink_msg_end = 0;
 static int fd_leds{-1};
 
 static led_control_s led_control {};
 static orb_advert_t led_control_pub = nullptr;
+
+// Static array that defines the duration of each tune, 0 if it's a repeating tune (therefore no fixed duration)
+static unsigned int tune_durations[tune_control_s::NUMBER_OF_TUNES] {};
+
+// End time of currently played tune, 0 for repeating tunes or silence
+static hrt_abstime tune_end = 0;
+
+// currently playing tune, can be interrupted after tune_end
+static uint8_t tune_current = tune_control_s::TUNE_ID_STOP;
+
 static tune_control_s tune_control {};
 static orb_advert_t tune_control_pub = nullptr;
+
 
 int buzzer_init()
 {
@@ -156,36 +174,57 @@ void buzzer_deinit()
 	orb_unadvertise(tune_control_pub);
 }
 
-void set_tune_override(int tune)
+void set_tune_override(const int tune_id)
 {
-	tune_control.tune_id = tune;
+	tune_control.tune_id = tune_id;
 	tune_control.volume = tune_control_s::VOLUME_LEVEL_DEFAULT;
 	tune_control.tune_override = true;
 	tune_control.timestamp = hrt_absolute_time();
 	orb_publish(ORB_ID(tune_control), tune_control_pub, &tune_control);
 }
 
-void set_tune(int tune)
+void set_tune(const int tune_id)
 {
-	unsigned int new_tune_duration = tune_durations[tune];
+	const hrt_abstime current_time = hrt_absolute_time();
+	const unsigned int new_tune_duration = tune_durations[tune_id];
+	const bool current_tune_is_repeating = (tune_end == 0);
+	const bool new_tune_is_repeating = (new_tune_duration == 0);
 
-	/* don't interrupt currently playing non-repeating tune by repeating */
-	if (tune_end == 0 || new_tune_duration != 0 || hrt_absolute_time() > tune_end) {
-		/* allow interrupting current non-repeating tune by the same tune */
-		if (tune != tune_current || new_tune_duration != 0) {
-			tune_control.tune_id = tune;
-			tune_control.volume = tune_control_s::VOLUME_LEVEL_DEFAULT;
-			tune_control.tune_override = false;
-			tune_control.timestamp = hrt_absolute_time();
-			orb_publish(ORB_ID(tune_control), tune_control_pub, &tune_control);
+	bool set_new_tune = false;
+
+	if (!current_tune_is_repeating) {
+		// Current non repeating tune has ended
+		if (current_time > tune_end) {
+			set_new_tune = true;
 		}
 
-		tune_current = tune;
+		// Allow non repeating tune to interrupt current non repeating tune, if it's different
+		if (!new_tune_is_repeating && (tune_id != tune_current)) {
+			set_new_tune = true;
+		}
+
+	} else {
+		// Allow interrupting repeating tune as long as it's a different tune
+		if (tune_id != tune_current) {
+			set_new_tune = true;
+		}
+	}
+
+	if (set_new_tune) {
+		tune_control.tune_id = tune_id;
+		tune_control.volume = tune_control_s::VOLUME_LEVEL_DEFAULT;
+		tune_control.tune_override = false;
+		tune_control.timestamp = current_time;
+		orb_publish(ORB_ID(tune_control), tune_control_pub, &tune_control);
+
+		tune_current = tune_id;
 
 		if (new_tune_duration != 0) {
-			tune_end = hrt_absolute_time() + new_tune_duration;
+			// Set tune ending time for a finite duration tunes
+			tune_end = current_time + new_tune_duration;
 
 		} else {
+			// Set tune ending time as 0 to indicate it's a repeating tune
 			tune_end = 0;
 		}
 	}
@@ -207,6 +246,16 @@ void tune_mission_ok(bool use_buzzer)
 	rgbled_set_color_and_mode(led_control_s::COLOR_GREEN, led_control_s::MODE_BLINK_FAST);
 
 	if (use_buzzer) {
+		set_tune(tune_control_s::TUNE_ID_NOTIFY_POSITIVE);
+	}
+}
+
+void tune_mission_warn(bool use_buzzer)
+{
+	blink_msg_end = hrt_absolute_time() + BLINK_MSG_TIME;
+	rgbled_set_color_and_mode(led_control_s::COLOR_YELLOW, led_control_s::MODE_BLINK_FAST);
+
+	if (use_buzzer) {
 		set_tune(tune_control_s::TUNE_ID_NOTIFY_NEUTRAL);
 	}
 }
@@ -214,7 +263,7 @@ void tune_mission_ok(bool use_buzzer)
 void tune_mission_fail(bool use_buzzer)
 {
 	blink_msg_end = hrt_absolute_time() + BLINK_MSG_TIME;
-	rgbled_set_color_and_mode(led_control_s::COLOR_GREEN, led_control_s::MODE_BLINK_FAST);
+	rgbled_set_color_and_mode(led_control_s::COLOR_RED, led_control_s::MODE_BLINK_FAST);
 
 	if (use_buzzer) {
 		set_tune(tune_control_s::TUNE_ID_NOTIFY_NEGATIVE);

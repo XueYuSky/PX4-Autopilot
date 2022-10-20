@@ -60,11 +60,8 @@ int FlightModeManager::_initTask(FlightTaskIndex task_index)
 @# loop through all requested tasks
 @[if tasks]@
 @[for task in tasks]@
-@{
-firstLowercase = lambda s: s[:1].lower() + s[1:] if s else ''
-}@
 	case FlightTaskIndex::@(task):
-		_current_task.task = new (&_task_union.@(firstLowercase(task))) FlightTask@(task)();
+		_current_task.task = new (&_task_union.@(task)) FlightTask@(task)();
 		break;
 
 @[end for]@
@@ -94,7 +91,7 @@ upperCase = lambda s: s[:].upper() if s else ''
 
 @[end for]@
 @[end if]@
-	// ignore all unkown commands
+	// ignore all unknown commands
 	default : return FlightTaskIndex::None;
 	}
 }

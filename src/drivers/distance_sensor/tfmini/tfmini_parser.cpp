@@ -58,7 +58,7 @@ const char *parser_state[] = {
 	"5_GOT_STRENGTH_L",
 	"6_GOT_STRENGTH_H",
 	"7_GOT_PRESERVED",
-	"8_GOT_QUALITY"
+	"8_GOT_QUALITY",
 	"9_GOT_CHECKSUM"
 };
 #endif
@@ -159,7 +159,11 @@ int tfmini_parse(char c, char *parserbuf, unsigned *parserbuf_index, TFMINI_PARS
 			unsigned int t2 = parserbuf[3];
 			t2 <<= 8;
 			t2 += t1;
-			*dist = ((float)t2) / 100;
+
+			if (t2 < 0xFFFFu) {
+				*dist = ((float)t2) / 100;
+			}
+
 			*state = TFMINI_PARSE_STATE::STATE6_GOT_CHECKSUM;
 			*parserbuf_index = 0;
 			ret = 0;

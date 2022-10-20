@@ -37,7 +37,7 @@
 
 #include "StickAccelerationXY.hpp"
 
-#include <ecl/geo/geo.h>
+#include <geo/geo.h>
 #include "Sticks.hpp"
 
 using namespace matrix;
@@ -52,6 +52,11 @@ StickAccelerationXY::StickAccelerationXY(ModuleParams *parent) :
 void StickAccelerationXY::resetPosition()
 {
 	_position_setpoint.setNaN();
+}
+
+void StickAccelerationXY::resetPosition(const matrix::Vector2f &position)
+{
+	_position_setpoint = position;
 }
 
 void StickAccelerationXY::resetVelocity(const matrix::Vector2f &velocity)
@@ -76,6 +81,15 @@ void StickAccelerationXY::generateSetpoints(Vector2f stick_xy, const float yaw, 
 
 	// Map stick input to acceleration
 	Sticks::limitStickUnitLengthXY(stick_xy);
+
+	if (_param_mpc_vel_man_side.get() >= 0.f) {
+		stick_xy(1) *= _param_mpc_vel_man_side.get() / _param_mpc_vel_manual.get();
+	}
+
+	if ((_param_mpc_vel_man_back.get() >= 0.f) && (stick_xy(0) < 0.f)) {
+		stick_xy(0) *= _param_mpc_vel_man_back.get() / _param_mpc_vel_manual.get();
+	}
+
 	Sticks::rotateIntoHeadingFrameXY(stick_xy, yaw, yaw_sp);
 	_acceleration_setpoint = stick_xy.emult(acceleration_scale);
 	applyJerkLimit(dt);
@@ -85,8 +99,11 @@ void StickAccelerationXY::generateSetpoints(Vector2f stick_xy, const float yaw, 
 
 	// Don't allow the drag to change the sign of the velocity, otherwise we might get into oscillations around 0, due
 	// to discretization
-	if (_acceleration_setpoint.norm_squared() < FLT_EPSILON
-	    && _velocity_setpoint.norm_squared() < drag.norm_squared() * dt * dt) {
+	if (((_acceleration_setpoint.norm_squared() < FLT_EPSILON)
+	     || (sign(_acceleration_setpoint_prev(0)) != sign(_acceleration_setpoint(0)))
+	     || (sign(_acceleration_setpoint_prev(1)) != sign(_acceleration_setpoint(1))))
+	    && (_velocity_setpoint.norm_squared() < (drag.norm_squared() * dt * dt))) {
+
 		drag.setZero();
 		_velocity_setpoint.setZero();
 	}
@@ -160,7 +177,7 @@ void StickAccelerationXY::applyTiltLimit(Vector2f &acceleration)
 void StickAccelerationXY::lockPosition(const Vector3f &pos, const matrix::Vector2f &vel_sp_feedback, const float dt)
 {
 	const bool moving = _velocity_setpoint.norm_squared() > FLT_EPSILON;
-	const bool position_locked = PX4_ISFINITE(_position_setpoint(0)) || PX4_ISFINITE(_position_setpoint(1));
+	const bool position_locked = Vector2f(_position_setpoint).isAllFinite();
 
 	// lock position
 	if (!moving && !position_locked) {
@@ -172,7 +189,7 @@ void StickAccelerationXY::lockPosition(const Vector3f &pos, const matrix::Vector
 		_position_setpoint.setNaN();
 
 		// avoid velocity setpoint jump caused by ignoring remaining position error
-		if (PX4_ISFINITE(vel_sp_feedback(0)) && PX4_ISFINITE(vel_sp_feedback(1))) {
+		if (vel_sp_feedback.isAllFinite()) {
 			_velocity_setpoint = vel_sp_feedback;
 		}
 	}

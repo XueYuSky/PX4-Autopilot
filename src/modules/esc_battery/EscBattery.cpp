@@ -33,12 +33,14 @@
 
 #include "EscBattery.hpp"
 
+#include <math.h>
+
 using namespace time_literals;
 
 EscBattery::EscBattery() :
 	ModuleParams(nullptr),
 	WorkItem(MODULE_NAME, px4::wq_configurations::lp_default),
-	_battery(1, this, ESC_BATTERY_INTERVAL_US)
+	_battery(1, this, ESC_BATTERY_INTERVAL_US, battery_status_s::BATTERY_SOURCE_ESCS)
 {
 }
 
@@ -46,7 +48,7 @@ bool
 EscBattery::init()
 {
 	if (!_esc_status_sub.registerCallback()) {
-		PX4_ERR("esc_status callback registration failed!");
+		PX4_ERR("callback registration failed");
 		return false;
 	}
 
@@ -82,37 +84,27 @@ EscBattery::Run()
 
 	if (_esc_status_sub.copy(&esc_status)) {
 
-		int online_bitmask = (1 << esc_status.esc_count) - 1;
-
-		if (online_bitmask != esc_status.esc_online_flags || esc_status.esc_count == 0 ||
-		    esc_status.esc_count > esc_status_s::CONNECTED_ESC_MAX) {
+		if (esc_status.esc_count == 0 || esc_status.esc_count > esc_status_s::CONNECTED_ESC_MAX) {
 			return;
 		}
 
+		const uint8_t online_esc_count = math::countSetBits(esc_status.esc_online_flags);
 		float average_voltage_v = 0.0f;
 		float total_current_a = 0.0f;
 
 		for (unsigned i = 0; i < esc_status.esc_count; ++i) {
-			average_voltage_v += esc_status.esc[i].esc_voltage;
-			total_current_a += esc_status.esc[i].esc_current;
+			if ((1 << i) & esc_status.esc_online_flags) {
+				average_voltage_v += esc_status.esc[i].esc_voltage;
+				total_current_a += esc_status.esc[i].esc_current;
+			}
 		}
 
-		average_voltage_v /= esc_status.esc_count;
+		average_voltage_v /= online_esc_count;
 
-		const bool connected = true;
-		const int priority = 0;
-
-		actuator_controls_s ctrl;
-		_actuator_ctrl_0_sub.copy(&ctrl);
-
-		_battery.updateBatteryStatus(
-			esc_status.timestamp,
-			average_voltage_v,
-			total_current_a,
-			connected,
-			battery_status_s::BATTERY_SOURCE_ESCS,
-			priority,
-			ctrl.control[actuator_controls_s::INDEX_THROTTLE]);
+		_battery.setConnected(true);
+		_battery.updateVoltage(average_voltage_v);
+		_battery.updateCurrent(total_current_a);
+		_battery.updateAndPublishBatteryStatus(esc_status.timestamp);
 	}
 }
 

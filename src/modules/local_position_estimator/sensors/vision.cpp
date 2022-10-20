@@ -42,17 +42,17 @@ void BlockLocalPositionEstimator::visionInit()
 		_sensorFault &= ~SENSOR_VISION;
 
 		// get reference for global position
-		_ref_lat = math::degrees(_global_local_proj_ref.lat_rad);
-		_ref_lon = math::degrees(_global_local_proj_ref.lon_rad);
+		_ref_lat = _global_local_proj_ref.getProjectionReferenceLat();
+		_ref_lon = _global_local_proj_ref.getProjectionReferenceLon();
 		_ref_alt = _global_local_alt0;
 
-		_is_global_cov_init = map_projection_initialized(&_global_local_proj_ref);
+		_is_global_cov_init = _global_local_proj_ref.isInitialized();
 
-		if (!_map_ref.init_done && _is_global_cov_init) {
+		if (!_map_ref.isInitialized() && _is_global_cov_init) {
 			// initialize global origin using the visual estimator reference
 			mavlink_log_info(&mavlink_log_pub, "[lpe] global origin init (vision) : lat %6.2f lon %6.2f alt %5.1f m",
 					 double(_ref_lat), double(_ref_lon), double(_ref_alt));
-			map_projection_init(&_map_ref, _ref_lat, _ref_lon);
+			_map_ref.initReference(_ref_lat, _ref_lon);
 			// set timestamp when origin was set to current time
 			_time_origin = _timeStamp;
 		}
@@ -60,22 +60,17 @@ void BlockLocalPositionEstimator::visionInit()
 		if (!_altOriginInitialized) {
 			_altOriginInitialized = true;
 			_altOriginGlobal = true;
-			_altOrigin = map_projection_initialized(&_global_local_proj_ref) ? _ref_alt : 0.0f;
+			_altOrigin = _global_local_proj_ref.isInitialized() ? _ref_alt : 0.0f;
 		}
 	}
 }
 
 int BlockLocalPositionEstimator::visionMeasure(Vector<float, n_y_vision> &y)
 {
-	uint8_t x_variance = _sub_visual_odom.get().COVARIANCE_MATRIX_X_VARIANCE;
-	uint8_t y_variance = _sub_visual_odom.get().COVARIANCE_MATRIX_Y_VARIANCE;
-	uint8_t z_variance = _sub_visual_odom.get().COVARIANCE_MATRIX_Z_VARIANCE;
-
-	if (PX4_ISFINITE(_sub_visual_odom.get().pose_covariance[x_variance])) {
+	if (PX4_ISFINITE(_sub_visual_odom.get().position_variance[0])) {
 		// check if the vision data is valid based on the covariances
-		_vision_eph = sqrtf(fmaxf(_sub_visual_odom.get().pose_covariance[x_variance],
-					  _sub_visual_odom.get().pose_covariance[y_variance]));
-		_vision_epv = sqrtf(_sub_visual_odom.get().pose_covariance[z_variance]);
+		_vision_eph = sqrtf(fmaxf(_sub_visual_odom.get().position_variance[0], _sub_visual_odom.get().position_variance[1]));
+		_vision_epv = sqrtf(_sub_visual_odom.get().position_variance[2]);
 		_vision_xy_valid = _vision_eph <= EP_MAX_STD_DEV;
 		_vision_z_valid = _vision_epv <= EP_MAX_STD_DEV;
 
@@ -92,11 +87,11 @@ int BlockLocalPositionEstimator::visionMeasure(Vector<float, n_y_vision> &y)
 	} else {
 		_time_last_vision_p = _sub_visual_odom.get().timestamp_sample;
 
-		if (PX4_ISFINITE(_sub_visual_odom.get().x)) {
+		if (PX4_ISFINITE(_sub_visual_odom.get().position[0])) {
 			y.setZero();
-			y(Y_vision_x) = _sub_visual_odom.get().x;
-			y(Y_vision_y) = _sub_visual_odom.get().y;
-			y(Y_vision_z) = _sub_visual_odom.get().z;
+			y(Y_vision_x) = _sub_visual_odom.get().position[0];
+			y(Y_vision_y) = _sub_visual_odom.get().position[1];
+			y(Y_vision_z) = _sub_visual_odom.get().position[2];
 			_visionStats.update(y);
 
 			return OK;

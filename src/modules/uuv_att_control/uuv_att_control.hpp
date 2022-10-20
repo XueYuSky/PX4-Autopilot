@@ -46,7 +46,7 @@
 #include <float.h>
 
 #include <drivers/drv_hrt.h>
-#include <lib/ecl/geo/geo.h>
+#include <lib/geo/geo.h>
 #include <lib/mathlib/mathlib.h>
 #include <lib/perf/perf_counter.h>
 #include <lib/pid/pid.h>
@@ -69,6 +69,8 @@
 #include <uORB/topics/vehicle_rates_setpoint.h>
 #include <uORB/topics/vehicle_control_mode.h>
 #include <uORB/topics/actuator_controls.h>
+#include <uORB/topics/vehicle_thrust_setpoint.h>
+#include <uORB/topics/vehicle_torque_setpoint.h>
 #include <uORB/uORB.h>
 
 using matrix::Eulerf;
@@ -98,7 +100,12 @@ public:
 	bool init();
 
 private:
+	void publishTorqueSetpoint(const hrt_abstime &timestamp_sample);
+	void publishThrustSetpoint(const hrt_abstime &timestamp_sample);
+
 	uORB::Publication<actuator_controls_s> _actuator_controls_pub{ORB_ID(actuator_controls_0)};
+	uORB::Publication<vehicle_thrust_setpoint_s>	_vehicle_thrust_setpoint_pub{ORB_ID(vehicle_thrust_setpoint)};
+	uORB::Publication<vehicle_torque_setpoint_s>	_vehicle_torque_setpoint_pub{ORB_ID(vehicle_torque_setpoint)};
 
 	uORB::SubscriptionInterval _parameter_update_sub{ORB_ID(parameter_update), 1_s};
 
@@ -110,13 +117,13 @@ private:
 
 	uORB::SubscriptionCallbackWorkItem _vehicle_attitude_sub{this, ORB_ID(vehicle_attitude)};
 
-	actuator_controls_s _actuators {}; /**< actuator control inputs */
-	manual_control_setpoint_s _manual_control_setpoint {}; /**< r/c channel data */
-	vehicle_attitude_setpoint_s _attitude_setpoint {}; /**< vehicle attitude setpoint */
-	vehicle_rates_setpoint_s _rates_setpoint {}; /**< vehicle bodyrates setpoint */
-	vehicle_control_mode_s _vcontrol_mode {}; /**< vehicle control mode */
+	actuator_controls_s _actuators{};
+	manual_control_setpoint_s _manual_control_setpoint{};
+	vehicle_attitude_setpoint_s _attitude_setpoint{};
+	vehicle_rates_setpoint_s _rates_setpoint{};
+	vehicle_control_mode_s _vcontrol_mode{};
 
-	perf_counter_t	_loop_perf; /**< loop performance counter */
+	perf_counter_t	_loop_perf;
 
 	DEFINE_PARAMETERS(
 		(ParamFloat<px4::params::UUV_ROLL_P>) _param_roll_p,

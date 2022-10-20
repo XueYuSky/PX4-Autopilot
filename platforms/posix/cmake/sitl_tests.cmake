@@ -8,7 +8,6 @@ set(tests
 	bezier
 	bitset
 	bson
-	conv
 	dataman
 	file2
 	float
@@ -19,17 +18,10 @@ set(tests
 	List
 	mathlib
 	matrix
-	microbench_atomic
-	microbench_hrt
-	microbench_math
-	microbench_matrix
-	microbench_uorb
-	mixer
 	param
 	parameters
 	perf
 	search_min
-	servo
 	sleep
 	versioning
 )
@@ -55,7 +47,6 @@ endforeach()
 
 # standalone tests
 set(cmd_tests
-	commander_tests
 	controllib_test
 	lightware_laser_test
 	rc_tests
@@ -96,6 +87,20 @@ set_tests_properties(sitl-mavlink PROPERTIES PASS_REGULAR_EXPRESSION "ALL TESTS 
 sanitizer_fail_test_on_error(sitl-mavlink)
 
 
+# IMU filtering
+add_test(NAME sitl-imu_filtering
+	COMMAND $<TARGET_FILE:px4>
+		-s ${PX4_SOURCE_DIR}/posix-configs/SITL/init/test/test_imu_filtering
+		-t ${PX4_SOURCE_DIR}/test_data
+		${PX4_SOURCE_DIR}/ROMFS/px4fmu_test
+	WORKING_DIRECTORY ${SITL_WORKING_DIR}
+)
+
+set_tests_properties(sitl-imu_filtering PROPERTIES FAIL_REGULAR_EXPRESSION "FAIL")
+set_tests_properties(sitl-imu_filtering PROPERTIES PASS_REGULAR_EXPRESSION "ALL TESTS PASSED")
+sanitizer_fail_test_on_error(sitl-imu_filtering)
+
+
 
 # # Shutdown test
 # add_test(NAME sitl-shutdown
@@ -114,16 +119,9 @@ sanitizer_fail_test_on_error(sitl-mavlink)
 
 # Dynamic module loading test
 add_test(NAME dyn
-	COMMAND ${PX4_SOURCE_DIR}/Tools/sitl_run.sh
-		$<TARGET_FILE:px4>
-		none
-		none
-		test_dyn_hello
-		none
-		${PX4_SOURCE_DIR}
-		${PX4_BINARY_DIR}
-		$<TARGET_FILE:examples__dyn_hello>
-	WORKING_DIRECTORY ${SITL_WORKING_DIR})
+	COMMAND $<TARGET_FILE:px4> -s "${PX4_SOURCE_DIR}/posix-configs/SITL/init/test/test_dyn_hello"
+	WORKING_DIRECTORY ${PX4_BINARY_DIR}/src/examples/dyn_hello
+)
 set_tests_properties(dyn PROPERTIES PASS_REGULAR_EXPRESSION "1: PASSED")
 sanitizer_fail_test_on_error(dyn)
 

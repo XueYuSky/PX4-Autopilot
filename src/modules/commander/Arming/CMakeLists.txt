@@ -31,6 +31,5 @@
 #
 ############################################################################
 
-add_subdirectory(PreFlightCheck)
 add_subdirectory(ArmAuthorization)
-add_subdirectory(HealthFlags)
+add_subdirectory(ArmStateMachine)

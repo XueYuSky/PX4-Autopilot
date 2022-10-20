@@ -41,17 +41,17 @@
 
 using namespace matrix;
 
-bool FlightTaskManualAltitudeSmoothVel::activate(const vehicle_local_position_setpoint_s &last_setpoint)
+bool FlightTaskManualAltitudeSmoothVel::activate(const trajectory_setpoint_s &last_setpoint)
 {
 	bool ret = FlightTaskManualAltitude::activate(last_setpoint);
 
 	// Check if the previous FlightTask provided setpoints
 
 	// If the position setpoint is unknown, set to the current postion
-	float z_sp_last = PX4_ISFINITE(last_setpoint.z) ? last_setpoint.z : _position(2);
+	float z_sp_last = PX4_ISFINITE(last_setpoint.position[2]) ? last_setpoint.position[2] : _position(2);
 
 	// If the velocity setpoint is unknown, set to the current velocity
-	float vz_sp_last = PX4_ISFINITE(last_setpoint.vz) ? last_setpoint.vz : _velocity(2);
+	float vz_sp_last = PX4_ISFINITE(last_setpoint.velocity[2]) ? last_setpoint.velocity[2] : _velocity(2);
 
 	// No acceleration estimate available, set to zero if the setpoint is NAN
 	float az_sp_last = PX4_ISFINITE(last_setpoint.acceleration[2]) ? last_setpoint.acceleration[2] : 0.f;
@@ -61,20 +61,12 @@ bool FlightTaskManualAltitudeSmoothVel::activate(const vehicle_local_position_se
 	return ret;
 }
 
-void FlightTaskManualAltitudeSmoothVel::reActivate()
-{
-	FlightTaskManualAltitude::reActivate();
-	// The task is reacivated while the vehicle is on the ground. To detect takeoff in mc_pos_control_main properly
-	// using the generated jerk, reset the z derivatives to zero
-	_smoothing.reset(0.f, 0.f, _position(2));
-}
-
-void FlightTaskManualAltitudeSmoothVel::_ekfResetHandlerPositionZ()
+void FlightTaskManualAltitudeSmoothVel::_ekfResetHandlerPositionZ(float delta_z)
 {
 	_smoothing.setCurrentPosition(_position(2));
 }
 
-void FlightTaskManualAltitudeSmoothVel::_ekfResetHandlerVelocityZ()
+void FlightTaskManualAltitudeSmoothVel::_ekfResetHandlerVelocityZ(float delta_vz)
 {
 	_smoothing.setCurrentVelocity(_velocity(2));
 }

@@ -149,12 +149,14 @@ static int io_timer_handler7(int irq, void *context, void *arg);
 #define rFCTRL20(_tim)         REG(_tim,  0, IMXRT_FLEXPWM_FCTRL20_OFFSET)       /* Fault Control 2 Register */
 
 
-//												 				  NotUsed   PWMOut  PWMIn Capture OneShot Trigger
-io_timer_channel_allocation_t channel_allocations[IOTimerChanModeSize] = { UINT16_MAX,   0,  0,  0, 0, 0 };
+//												 				  NotUsed   PWMOut  PWMIn Capture OneShot Trigger Dshot LED PPS Other
+io_timer_channel_allocation_t channel_allocations[IOTimerChanModeSize] = { UINT16_MAX,   0,  0,  0, 0, 0, 0, 0, 0, 0 };
 
 typedef uint8_t io_timer_allocation_t; /* big enough to hold MAX_IO_TIMERS */
 
-static io_timer_allocation_t once = 0;
+io_timer_channel_allocation_t timer_allocations[MAX_IO_TIMERS] = { };
+
+/* Stats and handlers are only useful for Capture */
 
 typedef struct channel_stat_t {
 	uint32_t 			isr_cout;
@@ -213,22 +215,40 @@ int io_timer_handler7(int irq, void *context, void *arg)
 	return io_timer_handler(7);
 }
 
-static inline int is_timer_uninitalized(unsigned timer)
+static inline int validate_timer_index(unsigned timer)
 {
-	int rv = 0;
+	return (timer < MAX_IO_TIMERS && io_timers[timer].base != 0) ? 0 : -EINVAL;
+}
 
-	if (once & 1 << timer) {
-		rv = -EBUSY;
+int io_timer_allocate_timer(unsigned timer, io_timer_channel_mode_t mode)
+{
+	int ret = -EINVAL;
+
+	if (validate_timer_index(timer) == 0) {
+		// check if timer is unused or already set to the mode we want
+		if (timer_allocations[timer] == IOTimerChanMode_NotUsed || timer_allocations[timer] == mode) {
+			timer_allocations[timer] = mode;
+			ret = 0;
+
+		} else {
+			ret = -EBUSY;
+		}
 	}
 
-	return rv;
+	return ret;
 }
 
-static inline void set_timer_initalized(unsigned timer)
+int io_timer_unallocate_timer(unsigned timer)
 {
-	once |= 1 << timer;
-}
+	int ret = -EINVAL;
 
+	if (validate_timer_index(timer) == 0) {
+		timer_allocations[timer] = IOTimerChanMode_NotUsed;
+		ret = 0;
+	}
+
+	return ret;
+}
 
 static inline int channels_timer(unsigned channel)
 {
@@ -238,19 +258,6 @@ static inline int channels_timer(unsigned channel)
 static uint32_t get_channel_mask(unsigned channel)
 {
 	return io_timer_validate_channel_index(channel) == 0 ? 1 << channel : 0;
-}
-
-int io_timer_is_channel_free(unsigned channel)
-{
-	int rv = io_timer_validate_channel_index(channel);
-
-	if (rv == 0) {
-		if (0 == (channel_allocations[IOTimerChanMode_NotUsed] & (1 << channel))) {
-			rv = -EBUSY;
-		}
-	}
-
-	return rv;
 }
 
 int io_timer_validate_channel_index(unsigned channel)
@@ -337,21 +344,26 @@ static int reallocate_channel_resources(uint32_t channels, io_timer_channel_mode
 	return before ^ channels;
 }
 
-static inline int allocate_channel_resource(unsigned channel, io_timer_channel_mode_t mode)
+__EXPORT int io_timer_allocate_channel(unsigned channel, io_timer_channel_mode_t mode)
 {
-	int rv = io_timer_is_channel_free(channel);
+	irqstate_t flags = px4_enter_critical_section();
+	int existing_mode = io_timer_get_channel_mode(channel);
+	int ret = -EBUSY;
 
-	if (rv == 0) {
+	if (existing_mode <= IOTimerChanMode_NotUsed || existing_mode == mode) {
 		io_timer_channel_allocation_t bit = 1 << channel;
 		channel_allocations[IOTimerChanMode_NotUsed] &= ~bit;
 		channel_allocations[mode] |= bit;
+		ret = 0;
 	}
 
-	return rv;
+	px4_leave_critical_section(flags);
+
+	return ret;
 }
 
 
-static inline int free_channel_resource(unsigned channel)
+int io_timer_unallocate_channel(unsigned channel)
 {
 	int mode = io_timer_get_channel_mode(channel);
 
@@ -364,24 +376,6 @@ static inline int free_channel_resource(unsigned channel)
 	return mode;
 }
 
-int io_timer_free_channel(unsigned channel)
-{
-	if (io_timer_validate_channel_index(channel) != 0) {
-		return -EINVAL;
-	}
-
-	int mode = io_timer_get_channel_mode(channel);
-
-	if (mode > IOTimerChanMode_NotUsed) {
-		io_timer_set_enable(false, mode, 1 << channel);
-		free_channel_resource(channel);
-
-	}
-
-	return 0;
-}
-
-
 static int allocate_channel(unsigned channel, io_timer_channel_mode_t mode)
 {
 	int rv = -EINVAL;
@@ -390,7 +384,7 @@ static int allocate_channel(unsigned channel, io_timer_channel_mode_t mode)
 		rv = io_timer_validate_channel_index(channel);
 
 		if (rv == 0) {
-			rv = allocate_channel_resource(channel, mode);
+			rv = io_timer_allocate_channel(channel, mode);
 		}
 	}
 
@@ -435,61 +429,86 @@ static inline void io_timer_set_PWM_mode(unsigned channel)
 	px4_leave_critical_section(flags);
 }
 
-void io_timer_trigger(void)
+void io_timer_trigger(unsigned channel_mask)
 {
-	int oneshots = io_timer_get_mode_channels(IOTimerChanMode_OneShot);
-	struct {
-		uint32_t base;
-		uint16_t triggers;
-	} action_cache[MAX_IO_TIMERS] = {0};
-	int actions = 0;
+	// Any Channels in oneshot?
 
-	/* Pre-calculate the list of channels to Trigger */
-	int mask;
+	int oneshots = io_timer_get_mode_channels(IOTimerChanMode_OneShot) & channel_mask;
 
-	for (int timer = 0; timer < MAX_IO_TIMERS; timer++) {
-		action_cache[actions].base = io_timers[timer].base;
+	// Yes do triggering
+	if (oneshots) {
+		struct {
+			uint32_t base;
+			uint16_t triggers;
+		} action_cache[MAX_IO_TIMERS] = {0};
 
-		if (action_cache[actions].base) {
-			uint32_t first_channel_index = io_timers_channel_mapping.element[timer].first_channel_index;
-			uint32_t last_channel_index = first_channel_index + io_timers_channel_mapping.element[timer].channel_count;
+		int actions = 0;
 
-			for (uint32_t channel = first_channel_index; channel < last_channel_index; channel++) {
+		// Get the Timer modules addresses
+		for (int timer = 0; timer < MAX_IO_TIMERS && io_timers[timer].base != 0; timer++) {
+			if (action_cache[actions].base == 0) {
+				action_cache[actions].base = io_timers[timer].base;
+
+			} else if (action_cache[actions].base != io_timers[timer].base) {
+				actions++;
+				action_cache[actions].base = io_timers[timer].base;
+			}
+		}
+
+
+		/* Pre-calculate the list of channels to Trigger for each Timer module */
+
+		int mask;
+		uint32_t channel = 0;
+
+		for (actions = 0; actions < MAX_IO_TIMERS; actions++) {
+			if (action_cache[actions].base == 0) {
+				// All have been processed
+				break;
+			}
+
+			// Group the bits from channels on the same timer
+			for (; channel < MAX_TIMER_IO_CHANNELS && timer_io_channels[channel].val_offset;  channel++) {
+
+				if (io_timers[timer_io_channels[channel].timer_index].base != action_cache[actions].base) {
+					break;
+				}
+
 				mask = get_channel_mask(channel);
 
 				if (oneshots & mask) {
 					action_cache[actions].triggers |= timer_io_channels[channel].sub_module_bits;
 				}
 			}
-
-			actions++;
 		}
-	}
 
-	/* Now do them all with the shortest delay in between */
-
-	irqstate_t flags = px4_enter_critical_section();
-
-	for (actions = 0; action_cache[actions].base != 0 &&  actions < MAX_IO_TIMERS; actions++) {
-		_REG16(action_cache[actions].base, IMXRT_FLEXPWM_MCTRL_OFFSET) |= (action_cache[actions].triggers >> MCTRL_LDOK_SHIFT)
-				<< MCTRL_CLDOK_SHIFT ;
-		_REG16(action_cache[actions].base, IMXRT_FLEXPWM_MCTRL_OFFSET) |= action_cache[actions].triggers;
-	}
-
-	px4_leave_critical_section(flags);
-}
-
-int io_timer_init_timer(unsigned timer)
-{
-	/* Do this only once per timer */
-
-	int rv = is_timer_uninitalized(timer);
-
-	if (rv == 0) {
+		/* Now do them all with the shortest delay in between */
 
 		irqstate_t flags = px4_enter_critical_section();
 
-		set_timer_initalized(timer);
+		for (actions = 0; action_cache[actions].base != 0 &&  actions < MAX_IO_TIMERS; actions++) {
+			_REG16(action_cache[actions].base, IMXRT_FLEXPWM_MCTRL_OFFSET) |= (action_cache[actions].triggers >> MCTRL_LDOK_SHIFT)
+					<< MCTRL_CLDOK_SHIFT ;
+			_REG16(action_cache[actions].base, IMXRT_FLEXPWM_MCTRL_OFFSET) |= action_cache[actions].triggers;
+		}
+
+		px4_leave_critical_section(flags);
+	}
+}
+
+int io_timer_init_timer(unsigned timer, io_timer_channel_mode_t mode)
+{
+	if (validate_timer_index(timer) != 0) {
+		return -EINVAL;
+	}
+
+	io_timer_channel_mode_t previous_mode = timer_allocations[timer];
+	int rv = io_timer_allocate_timer(timer, mode);
+
+	/* Do this only once per timer */
+	if (rv == 0 && previous_mode == IOTimerChanMode_NotUsed) {
+
+		irqstate_t flags = px4_enter_critical_section();
 
 		/* enable the timer clock before we try to talk to it */
 
@@ -545,62 +564,54 @@ int io_timer_init_timer(unsigned timer)
 }
 
 
-int io_timer_set_rate(unsigned channel, unsigned rate)
+int io_timer_set_pwm_rate(unsigned timer, unsigned rate)
 {
-	int rv = EBUSY;
-
-	/* Get the channel bits that belong to the channel */
-
-	uint32_t channels = get_channel_mask(channel);
-
-	/* Check that all channels are either in PWM or Oneshot */
-
-	if ((channels & (channel_allocations[IOTimerChanMode_PWMOut] |
-			 channel_allocations[IOTimerChanMode_OneShot] |
-			 channel_allocations[IOTimerChanMode_NotUsed])) ==
-	    channels) {
-
-		/* Change only a timer that is owned by pwm or one shot */
-
-		/* Request to use OneShot ?*/
-
-		if (rate == 0) {
-
-			/* Request to use OneShot
-			 *
-			 * We are here because ALL these channels were either PWM or Oneshot
-			 * Now they need to be Oneshot
-			 */
-
-			/* Did the allocation change */
-			if (reallocate_channel_resources(channels, IOTimerChanMode_PWMOut, IOTimerChanMode_OneShot)) {
-				io_timer_set_oneshot_mode(channel);
-			}
-
-		} else {
-
-			/* Request to use PWM
-			 *
-			 * We are here because  ALL these channels were either PWM or Oneshot
-			 * Now they need to be PWM
-			 */
-
-			if (reallocate_channel_resources(channels, IOTimerChanMode_OneShot, IOTimerChanMode_PWMOut)) {
-				io_timer_set_PWM_mode(channel);
-			}
-
-			timer_set_rate(channel, rate);
-		}
-
-		rv = OK;
+	/* Change only a timer that is owned by pwm or one shot */
+	if (timer_allocations[timer] != IOTimerChanMode_PWMOut && timer_allocations[timer] != IOTimerChanMode_OneShot) {
+		return -EINVAL;
 	}
 
-	return rv;
+	/* Get the channel bits that belong to the timer and are in PWM or OneShot mode */
+
+	uint32_t channels = get_channel_mask(timer) & (io_timer_get_mode_channels(IOTimerChanMode_OneShot) |
+			    io_timer_get_mode_channels(IOTimerChanMode_PWMOut));
+
+	/* Request to use OneShot ?*/
+
+	if (PWM_RATE_ONESHOT == rate) {
+
+		/* Request to use OneShot
+		 */
+		int changed_channels = reallocate_channel_resources(channels, IOTimerChanMode_PWMOut, IOTimerChanMode_OneShot);
+
+		/* Did the allocation change */
+		if (changed_channels) {
+			io_timer_set_oneshot_mode(timer);
+		}
+
+	} else {
+
+		/* Request to use PWM
+		 */
+		int changed_channels = reallocate_channel_resources(channels, IOTimerChanMode_OneShot, IOTimerChanMode_PWMOut);
+
+		if (changed_channels) {
+			io_timer_set_PWM_mode(timer);
+		}
+
+		timer_set_rate(timer, rate);
+	}
+
+	return OK;
 }
 
 int io_timer_channel_init(unsigned channel, io_timer_channel_mode_t mode,
 			  channel_handler_t channel_handler, void *context)
 {
+	if (io_timer_validate_channel_index(channel) != 0) {
+		return -EINVAL;
+	}
+
 	uint32_t gpio = 0;
 
 	/* figure out the GPIO config first */
@@ -625,19 +636,26 @@ int io_timer_channel_init(unsigned channel, io_timer_channel_mode_t mode,
 		return -EINVAL;
 	}
 
+	irqstate_t flags = px4_enter_critical_section(); // atomic channel allocation and hw config
+
+	int previous_mode = io_timer_get_channel_mode(channel);
 	int rv = allocate_channel(channel, mode);
+	unsigned timer = channels_timer(channel);
+
+	if (rv == 0) {
+		/* Try to reserve & initialize the timer - it will only do it once */
+
+		rv = io_timer_init_timer(timer, mode);
+
+		if (rv != 0 && previous_mode == IOTimerChanMode_NotUsed) {
+			/* free the channel if it was not used before */
+			io_timer_unallocate_channel(channel);
+		}
+	}
 
 	/* Valid channel should now be reserved in new mode */
 
-	if (rv >= 0) {
-
-		unsigned timer = channels_timer(channel);
-
-		/* Blindly try to initialize the timer - it will only do it once */
-
-		io_timer_init_timer(timer);
-
-		irqstate_t flags = px4_enter_critical_section();
+	if (rv == 0) {
 
 		/* Set up IO */
 		if (gpio) {
@@ -650,8 +668,9 @@ int io_timer_channel_init(unsigned channel, io_timer_channel_mode_t mode,
 
 		channel_handlers[channel].callback = channel_handler;
 		channel_handlers[channel].context = context;
-		px4_leave_critical_section(flags);
 	}
+
+	px4_leave_critical_section(flags);
 
 	return rv;
 }
@@ -689,44 +708,71 @@ int io_timer_set_enable(bool state, io_timer_channel_mode_t mode, io_timer_chann
 
 	}
 
-	struct {
-		uint32_t sm_ens;
-		uint32_t base;
-		uint32_t io_index;
-		uint32_t gpios[MAX_TIMER_IO_CHANNELS];
-	} action_cache[MAX_IO_TIMERS];
+	if (masks) {
+		struct {
+			uint32_t sm_ens;
+			uint32_t base;
+			uint32_t io_index;
+			uint32_t gpios[MAX_TIMER_IO_CHANNELS];
+		} action_cache[MAX_IO_TIMERS];
 
-	memset(action_cache, 0, sizeof(action_cache));
+		unsigned int actions = 0;
+		memset(action_cache, 0, sizeof(action_cache));
 
-	for (int chan_index = 0; masks != 0 && chan_index < MAX_TIMER_IO_CHANNELS; chan_index++) {
-		if (masks & (1 << chan_index)) {
-			masks &= ~(1 << chan_index);
+		for (int timer = 0; timer < MAX_IO_TIMERS && io_timers[timer].base != 0; timer++) {
+			if (action_cache[actions].base == 0) {
+				action_cache[actions].base = io_timers[timer].base;
 
-			if (io_timer_validate_channel_index(chan_index) == 0) {
-				uint32_t timer_index = channels_timer(chan_index);
-				action_cache[timer_index].base = io_timers[timer_index].base;
-				action_cache[timer_index].sm_ens |= MCTRL_RUN(1 << timer_io_channels[chan_index].sub_module) |
-								    timer_io_channels[chan_index].sub_module_bits;
-				action_cache[timer_index].gpios[action_cache[timer_index].io_index++] = timer_io_channels[chan_index].gpio_out;
+			} else if (action_cache[actions].base != io_timers[timer].base) {
+				actions++;
+				action_cache[actions].base = io_timers[timer].base;
 			}
 		}
-	}
 
-	irqstate_t flags = px4_enter_critical_section();
+		int chan_index = 0;
 
-	for (unsigned actions = 0; actions < arraySize(action_cache); actions++) {
-		if (action_cache[actions].base != 0) {
+		for (actions = 0; actions < MAX_IO_TIMERS; actions++) {
+			if (action_cache[actions].base == 0) {
+				// All have been processed
+				break;
+			}
+
+			for (; masks != 0 && chan_index < MAX_TIMER_IO_CHANNELS && timer_io_channels[chan_index].val_offset; chan_index++) {
+
+				if (masks & (1 << chan_index)) {
+
+					if (io_timers[timer_io_channels[chan_index].timer_index].base != action_cache[actions].base) {
+						break;
+					}
+
+					masks &= ~(1 << chan_index);
+
+					action_cache[actions].sm_ens |= MCTRL_RUN(1 << timer_io_channels[chan_index].sub_module) |
+									timer_io_channels[chan_index].sub_module_bits;
+					action_cache[actions].gpios[action_cache[actions].io_index++] = timer_io_channels[chan_index].gpio_out;
+				}
+			}
+		}
+
+		irqstate_t flags = px4_enter_critical_section();
+
+		for (actions = 0; actions < arraySize(action_cache); actions++) {
+			if (action_cache[actions].base == 0) {
+				break;
+			}
+
 			for (unsigned int index = 0; index < action_cache[actions].io_index; index++) {
 				if (action_cache[actions].gpios[index]) {
 					px4_arch_configgpio(action_cache[actions].gpios[index]);
 				}
-
-				_REG16(action_cache[actions].base, IMXRT_FLEXPWM_MCTRL_OFFSET) = action_cache[actions].sm_ens;
 			}
+
+			_REG16(action_cache[actions].base, IMXRT_FLEXPWM_MCTRL_OFFSET) = action_cache[actions].sm_ens;
 		}
+
+		px4_leave_critical_section(flags);
 	}
 
-	px4_leave_critical_section(flags);
 	return 0;
 }
 

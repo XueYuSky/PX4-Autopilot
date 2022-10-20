@@ -1,6 +1,6 @@
 #!/bin/sh
 #
-# PX4 FMUv2 specific board sensors init
+# board specific sensors init
 #------------------------------------------------------------------------------
 
 rgbled start -I
@@ -12,7 +12,7 @@ board_adc start
 hmc5883 -T -I -R 4 start
 
 # Internal SPI (auto detect ms5611 or ms5607)
-if ! ms5611 -T 5607 -s -b 1 start
+if ! ms5611 -T 5607 -q -s -b 1 start
 then
 	ms5611 -s -b 1 start
 fi
@@ -65,12 +65,6 @@ then
 	# sensor heating is available, but we disable it for now
 	param set-default SENS_EN_THERMAL 0
 
-	# l3gd20 (external/isolated SPI4)
-	l3gd20 -s -b 4 -R 4 start
-
-	# lsm303d (external/isolated SPI4)
-	lsm303d -s -b 4 -R 6 start
-
 	# ms5611 (external/isolated SPI4)
 	ms5611 -s -b 4 start
 
@@ -89,6 +83,13 @@ then
 		mpu9250 -s -b 1 start
 	fi
 
+	# l3gd20 (external/isolated SPI4)
+	# low quality sensor disabled by default to save memory
+	#l3gd20 -s -b 4 -R 4 start
+
+	# lsm303d (external/isolated SPI4)
+	lsm303d -s -b 4 -R 6 start
+
 else
 	# $BOARD_FMUV3 = 0 -> FMUv2
 
@@ -99,7 +100,7 @@ else
 	# V3 build hwtypecmp supports V2|V2M|V30
 	if ! ver hwtypecmp V2M
 	then
-		mpu9250 -s -b 1 -R 14 start
+		mpu9250 -s -b 1 -R 14 -q start
 	# else: On the PixhawkMini the mpu9250 has been disabled due to HW errata
 	fi
 

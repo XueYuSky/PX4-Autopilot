@@ -56,7 +56,6 @@ from __future__ import print_function
 import sys
 import argparse
 import binascii
-import serial
 import socket
 import struct
 import json
@@ -68,11 +67,33 @@ import os
 
 from sys import platform as _platform
 
+try:
+    import serial
+except ImportError as e:
+    print("Failed to import serial: " + str(e))
+    print("")
+    print("You may need to install it using:")
+    print("    pip3 install --user pyserial")
+    print("")
+    sys.exit(1)
+
+
+# Define time to use time.time() by default
+def _time():
+    return time.time()
+
 # Detect python version
 if sys.version_info[0] < 3:
     runningPython3 = False
 else:
     runningPython3 = True
+    if sys.version_info[1] >=3:
+        # redefine to use monotonic time when available
+        def _time():
+            try:
+                return time.monotonic()
+            except Exception:
+                return time.time()
 
 class FirmwareNotSuitableException(Exception):
     def __init__(self, message):
@@ -221,7 +242,7 @@ class uploader(object):
 
     def open(self):
         # upload timeout
-        timeout = time.time() + 0.2
+        timeout = _time() + 0.2
 
         # attempt to open the port while it exists and until timeout occurs
         while self.port is not None:
@@ -231,7 +252,7 @@ class uploader(object):
             except AttributeError:
                 portopen = self.port.isOpen()
 
-            if not portopen and time.time() < timeout:
+            if not portopen and _time() < timeout:
                 try:
                     self.port.open()
                 except OSError:
@@ -322,7 +343,7 @@ class uploader(object):
 
         except NotImplementedError:
             raise RuntimeError("Programing not supported for this version of silicon!\n"
-                               "See https://docs.px4.io/master/en/flight_controller/silicon_errata.html")
+                               "See https://docs.px4.io/main/en/flight_controller/silicon_errata.html")
         except RuntimeError:
             # timeout, no response yet
             return False
@@ -406,16 +427,16 @@ class uploader(object):
                     uploader.EOC)
 
         # erase is very slow, give it 30s
-        deadline = time.time() + 30.0
-        while time.time() < deadline:
+        deadline = _time() + 30.0
+        while _time() < deadline:
 
             usualEraseDuration = 15.0
-            estimatedTimeRemaining = deadline-time.time()
+            estimatedTimeRemaining = deadline-_time()
             if estimatedTimeRemaining >= usualEraseDuration:
                 self.__drawProgressBar(label, 30.0-estimatedTimeRemaining, usualEraseDuration)
             else:
                 self.__drawProgressBar(label, 10.0, 10.0)
-                sys.stdout.write(" (timeout: %d seconds) " % int(deadline-time.time()))
+                sys.stdout.write(" (timeout: %d seconds) " % int(deadline-_time()))
                 sys.stdout.flush()
 
             if self.__trySync():
@@ -563,7 +584,7 @@ class uploader(object):
     # upload the firmware
     def upload(self, fw, force=False, boot_delay=None):
         # Make sure we are doing the right thing
-        start = time.time()
+        start = _time()
         if self.board_type != fw.property('board_id'):
             msg = "Firmware not suitable for this board (Firmware board_type=%u board_id=%u)" % (
                 self.board_type, fw.property('board_id'))
@@ -659,7 +680,7 @@ class uploader(object):
         print("\nRebooting.", end='')
         self.__reboot()
         self.port.close()
-        print(" Elapsed Time %3.3f\n" % (time.time() - start))
+        print(" Elapsed Time %3.3f\n" % (_time() - start))
 
     def __next_baud_flightstack(self):
         if self.baudrate_flightstack_idx + 1 >= len(self.baudrate_flightstack):
@@ -673,7 +694,28 @@ class uploader(object):
 
         return True
 
-    def send_reboot(self):
+    def send_protocol_splitter_format(self, data):
+        # Header Structure:
+        #      bits:   1 2 3 4 5 6 7 8
+        # header[0] - |     Magic     | (='S')
+        # header[1] - |T|   LenH      | (T - 0: mavlink; 1: rtps)
+        # header[2] - |     LenL      |
+        # header[3] - |   Checksum    |
+
+        MAGIC = 83
+
+        len_bytes = len(data).to_bytes(2, "big")
+        LEN_H = len_bytes[0] & 127
+        LEN_L = len_bytes[1] & 255
+        CHECKSUM = MAGIC ^ LEN_H ^ LEN_L
+
+        header_ints = [MAGIC, LEN_H, LEN_L, CHECKSUM]
+        header_bytes = struct.pack("{}B".format(len(header_ints)), *header_ints)
+
+        self.__send(header_bytes)
+        self.__send(data)
+
+    def send_reboot(self, use_protocol_splitter_format=False):
         if (not self.__next_baud_flightstack()):
             return False
 
@@ -684,15 +726,19 @@ class uploader(object):
             print("If the board does not respond, unplug and re-plug the USB connector.", file=sys.stderr)
 
         try:
+            send_fct = self.__send
+            if use_protocol_splitter_format:
+                send_fct = self.send_protocol_splitter_format
+
             # try MAVLINK command first
             self.port.flush()
-            self.__send(uploader.MAVLINK_REBOOT_ID1)
-            self.__send(uploader.MAVLINK_REBOOT_ID0)
+            send_fct(uploader.MAVLINK_REBOOT_ID1)
+            send_fct(uploader.MAVLINK_REBOOT_ID0)
             # then try reboot via NSH
-            self.__send(uploader.NSH_INIT)
-            self.__send(uploader.NSH_REBOOT_BL)
-            self.__send(uploader.NSH_INIT)
-            self.__send(uploader.NSH_REBOOT)
+            send_fct(uploader.NSH_INIT)
+            send_fct(uploader.NSH_REBOOT_BL)
+            send_fct(uploader.NSH_INIT)
+            send_fct(uploader.NSH_REBOOT)
             self.port.flush()
             self.port.baudrate = self.baudrate_bootloader
         except Exception:
@@ -717,37 +763,18 @@ def main():
     parser.add_argument('--baud-flightstack', action="store", default="57600", help="Comma-separated list of baud rate of the serial port (default is 57600) when communicating with flight stack (Mavlink or NSH), only required for true serial ports.")
     parser.add_argument('--force', action='store_true', default=False, help='Override board type check, or silicon errata checks and continue loading')
     parser.add_argument('--boot-delay', type=int, default=None, help='minimum boot delay to store in flash')
+    parser.add_argument('--use-protocol-splitter-format', action='store_true', help='use protocol splitter format for reboot')
     parser.add_argument('firmware', action="store", help="Firmware file to be uploaded")
     args = parser.parse_args()
+
+    if args.use_protocol_splitter_format:
+        print("Using protocol splitter format to reboot pixhawk!")
 
     # warn people about ModemManager which interferes badly with Pixhawk
     if os.path.exists("/usr/sbin/ModemManager"):
         print("==========================================================================================================")
         print("WARNING: You should uninstall ModemManager as it conflicts with any non-modem serial device (like Pixhawk)")
         print("==========================================================================================================")
-
-    # We need to check for pyserial because the import itself doesn't
-    # seem to fail, at least not on macOS.
-    pyserial_installed = False
-    try:
-        if serial.__version__:
-            pyserial_installed = True
-    except:
-        pass
-
-    try:
-        if serial.VERSION:
-            pyserial_installed = True
-    except:
-        pass
-
-    if not pyserial_installed:
-        print("Error: pyserial not installed!")
-        print("")
-        print("You may need to install it using:")
-        print("    pip3 install --user pyserial")
-        print("")
-        sys.exit(1)
 
     # Load the firmware file
     fw = firmware(args.firmware)
@@ -844,7 +871,7 @@ def main():
 
                     except Exception:
 
-                        if not up.send_reboot():
+                        if not up.send_reboot(args.use_protocol_splitter_format):
                             break
 
                         # wait for the reboot, without we might run into Serial I/O Error 5

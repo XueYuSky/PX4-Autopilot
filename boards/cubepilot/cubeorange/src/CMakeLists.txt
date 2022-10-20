@@ -41,7 +41,7 @@ if("${PX4_BOARD_LABEL}" STREQUAL  "bootloader")
 			nuttx_drivers
 			bootloader
 	)
-	target_include_directories(drivers_board PRIVATE ${PX4_SOURCE_DIR}/platforms/nuttx/src/bootloader)
+	target_include_directories(drivers_board PRIVATE ${PX4_SOURCE_DIR}/platforms/nuttx/src/bootloader/common)
 
 else()
 	add_library(drivers_board
@@ -55,6 +55,7 @@ else()
 
 	target_link_libraries(drivers_board
 		PRIVATE
+			arch_io_pins
 			arch_spi
 			drivers__led
 			nuttx_arch

@@ -1,6 +1,6 @@
 /****************************************************************************
  *
- *   Copyright (c) 2021 PX4 Development Team. All rights reserved.
+ *   Copyright (c) 2021-2022 PX4 Development Team. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -40,14 +40,15 @@ static constexpr int16_t combine(uint8_t msb, uint8_t lsb)
 	return (msb << 8u) | lsb;
 }
 
-ICM20948_I2C_Passthrough::ICM20948_I2C_Passthrough(I2CSPIBusOption bus_option, int bus, int bus_frequency) :
-	I2C(DRV_IMU_DEVTYPE_ICM20948, MODULE_NAME, bus, I2C_ADDRESS_DEFAULT, bus_frequency),
-	I2CSPIDriver(MODULE_NAME, px4::device_bus_to_wq(get_device_id()), bus_option, bus)
+ICM20948_I2C_Passthrough::ICM20948_I2C_Passthrough(const I2CSPIDriverConfig &config) :
+	I2C(config),
+	I2CSPIDriver(config)
 {
 }
 
 ICM20948_I2C_Passthrough::~ICM20948_I2C_Passthrough()
 {
+	perf_free(_reset_perf);
 	perf_free(_bad_register_perf);
 	perf_free(_bad_transfer_perf);
 }
@@ -76,22 +77,38 @@ void ICM20948_I2C_Passthrough::print_status()
 {
 	I2CSPIDriverBase::print_status();
 
-	PX4_INFO("temperature: %.1f degC", (double)_temperature);
+	PX4_INFO_RAW("temperature: %.1f degC", (double)_temperature);
 
+	perf_print_counter(_reset_perf);
 	perf_print_counter(_bad_register_perf);
 	perf_print_counter(_bad_transfer_perf);
 }
 
 int ICM20948_I2C_Passthrough::probe()
 {
-	const uint8_t whoami = RegisterRead(Register::BANK_0::WHO_AM_I);
+	// 3 retries
+	for (int i = 0; i < 3; i++) {
 
-	if (whoami != WHOAMI) {
-		DEVICE_DEBUG("unexpected WHO_AM_I 0x%02x", whoami);
-		return PX4_ERROR;
+		const uint8_t WHO_AM_I = RegisterRead(Register::BANK_0::WHO_AM_I);
+
+		if (WHO_AM_I == WHOAMI) {
+			return PX4_OK;
+
+		} else {
+			DEVICE_DEBUG("unexpected WHO_AM_I 0x%02x", WHO_AM_I);
+
+			uint8_t reg_bank_sel = RegisterRead(Register::BANK_0::REG_BANK_SEL);
+			int bank = reg_bank_sel >> 4;
+
+			if (bank >= 1 && bank <= 3) {
+				DEVICE_DEBUG("incorrect register bank for WHO_AM_I REG_BANK_SEL:0x%02x, bank:%d", reg_bank_sel, bank);
+				// force bank selection and retry
+				SelectRegisterBank(REG_BANK_SEL_BIT::USER_BANK_0, true);
+			}
+		}
 	}
 
-	return PX4_OK;
+	return PX4_ERROR;
 }
 
 void ICM20948_I2C_Passthrough::RunImpl()
@@ -100,6 +117,7 @@ void ICM20948_I2C_Passthrough::RunImpl()
 
 	switch (_state) {
 	case STATE::RESET:
+		perf_count(_reset_perf);
 		// PWR_MGMT_1: Device Reset
 		RegisterWrite(Register::BANK_0::PWR_MGMT_1, PWR_MGMT_1_BIT::DEVICE_RESET);
 		_reset_timestamp = now;
@@ -112,8 +130,8 @@ void ICM20948_I2C_Passthrough::RunImpl()
 
 		// The reset value is 0x00 for all registers other than the registers below
 		if ((RegisterRead(Register::BANK_0::WHO_AM_I) == WHOAMI) && (RegisterRead(Register::BANK_0::PWR_MGMT_1) == 0x41)) {
-			// Wakeup and reset
-			RegisterWrite(Register::BANK_0::USER_CTRL, USER_CTRL_BIT::SRAM_RST | USER_CTRL_BIT::I2C_MST_RST);
+			// Wakeup
+			RegisterSetAndClearBits(Register::BANK_0::PWR_MGMT_1, 0, PWR_MGMT_1_BIT::SLEEP);
 
 			// if reset succeeded then configure
 			_state = STATE::CONFIGURE;
@@ -121,10 +139,9 @@ void ICM20948_I2C_Passthrough::RunImpl()
 
 		} else {
 			// RESET not complete
-			if (hrt_elapsed_time(&_reset_timestamp) > 1000_ms) {
-				PX4_DEBUG("Reset failed, retrying");
-				_state = STATE::RESET;
-				ScheduleDelayed(100_ms);
+			if (hrt_elapsed_time(&_reset_timestamp) > 30_s) {
+				PX4_ERR("Reset failed, retrying");
+				Reset();
 
 			} else {
 				PX4_DEBUG("Reset not complete, check again in 10 ms");
@@ -136,26 +153,58 @@ void ICM20948_I2C_Passthrough::RunImpl()
 
 	case STATE::CONFIGURE:
 		if (Configure()) {
+			// if configure succeeded then start reading
 			_state = STATE::READ;
 			ScheduleOnInterval(500_ms);
 
 		} else {
 			// CONFIGURE not complete
-			if (hrt_elapsed_time(&_reset_timestamp) > 1000_ms) {
-				PX4_DEBUG("Configure failed, resetting");
-				_state = STATE::RESET;
+			if (hrt_elapsed_time(&_reset_timestamp) > 30_s) {
+				PX4_ERR("Configure failed, resetting");
+				Reset();
 
 			} else {
 				PX4_DEBUG("Configure failed, retrying");
+				ScheduleDelayed(10_ms);
 			}
-
-			ScheduleDelayed(10_ms);
 		}
 
 		break;
 
 	case STATE::READ: {
-			if (hrt_elapsed_time(&_last_config_check_timestamp) > 1000_ms) {
+
+			bool success = false;
+
+			const uint8_t TEMP_OUT_H = RegisterRead(Register::BANK_0::TEMP_OUT_H);
+			const uint8_t TEMP_OUT_L = RegisterRead(Register::BANK_0::TEMP_OUT_L);
+
+			const float TEMP_OUT = combine(TEMP_OUT_H, TEMP_OUT_L);
+
+			// To convert the output of the temperature sensor to degrees C use the following formula: (Document Number: DS-000189 Revision: 1.3)
+			const float TEMP_degC = (TEMP_OUT / TEMPERATURE_SENSITIVITY) + TEMPERATURE_OFFSET;
+
+			// -40°C to +85°C A
+			if (PX4_ISFINITE(TEMP_degC) && (TEMP_degC >= TEMPERATURE_SENSOR_MIN) && (TEMP_degC <= TEMPERATURE_SENSOR_MAX)) {
+				_temperature = TEMP_degC;
+
+				success = true;
+
+				if (_failure_count > 0) {
+					_failure_count--;
+				}
+			}
+
+			if (!success) {
+				_failure_count++;
+
+				// full reset if things are failing consistently
+				if (_failure_count > 10) {
+					Reset();
+					return;
+				}
+			}
+
+			if (!success || hrt_elapsed_time(&_last_config_check_timestamp) > 100_ms) {
 				// check configuration registers periodically or immediately following any failure
 				if (RegisterCheck(_register_bank0_cfg[_checked_register_bank0])) {
 					_last_config_check_timestamp = now;
@@ -166,13 +215,6 @@ void ICM20948_I2C_Passthrough::RunImpl()
 					perf_count(_bad_register_perf);
 					Reset();
 				}
-
-			} else {
-				// periodically update temperature (~1 Hz)
-				if (hrt_elapsed_time(&_temperature_update_timestamp) >= 1_s) {
-					UpdateTemperature();
-					_temperature_update_timestamp = now;
-				}
 			}
 		}
 
@@ -180,9 +222,9 @@ void ICM20948_I2C_Passthrough::RunImpl()
 	}
 }
 
-void ICM20948_I2C_Passthrough::SelectRegisterBank(enum REG_BANK_SEL_BIT bank)
+void ICM20948_I2C_Passthrough::SelectRegisterBank(enum REG_BANK_SEL_BIT bank, bool force)
 {
-	if (bank != _last_register_bank) {
+	if (bank != _last_register_bank || force) {
 		// select BANK_0
 		uint8_t cmd_bank_sel[2];
 		cmd_bank_sel[0] = static_cast<uint8_t>(Register::BANK_0::REG_BANK_SEL);
@@ -196,6 +238,8 @@ void ICM20948_I2C_Passthrough::SelectRegisterBank(enum REG_BANK_SEL_BIT bank)
 
 bool ICM20948_I2C_Passthrough::Configure()
 {
+	_retries = 2;
+
 	// first set and clear all configured register bits
 	for (const auto &reg_cfg : _register_bank0_cfg) {
 		RegisterSetAndClearBits(reg_cfg.reg, reg_cfg.set_bits, reg_cfg.clear_bits);
@@ -259,31 +303,9 @@ template <typename T>
 void ICM20948_I2C_Passthrough::RegisterSetAndClearBits(T reg, uint8_t setbits, uint8_t clearbits)
 {
 	const uint8_t orig_val = RegisterRead(reg);
-
 	uint8_t val = (orig_val & ~clearbits) | setbits;
 
 	if (orig_val != val) {
 		RegisterWrite(reg, val);
-	}
-}
-
-void ICM20948_I2C_Passthrough::UpdateTemperature()
-{
-	SelectRegisterBank(REG_BANK_SEL_BIT::USER_BANK_0);
-
-	// read current temperature
-	uint8_t cmd = static_cast<uint8_t>(Register::BANK_0::TEMP_OUT_H);
-	uint8_t temperature_buf[2] {};
-
-	if (transfer(&cmd, 1, temperature_buf, 2) != PX4_OK) {
-		perf_count(_bad_transfer_perf);
-		return;
-	}
-
-	const int16_t TEMP_OUT = combine(temperature_buf[0], temperature_buf[1]);
-	const float TEMP_degC = (TEMP_OUT / TEMPERATURE_SENSITIVITY) + TEMPERATURE_OFFSET;
-
-	if (PX4_ISFINITE(TEMP_degC)) {
-		_temperature = TEMP_degC;
 	}
 }

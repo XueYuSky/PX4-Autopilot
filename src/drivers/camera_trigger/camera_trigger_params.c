@@ -128,27 +128,6 @@ PARAM_DEFINE_FLOAT(TRIG_ACT_TIME, 40.0f);
 PARAM_DEFINE_INT32(TRIG_MODE, 0);
 
 /**
- * Camera trigger pin
- *
- * Selects which FMU pin is used (range: AUX1-AUX8 on Pixhawk controllers with an I/O board,
- * MAIN1-MAIN8 on controllers without an I/O board. The PWM interface takes two pins per camera, while relay
- * triggers on every pin individually. Example: Value 56 would trigger on pins 5 and 6.
- * For GPIO mode Pin 6 will be triggered followed by 5. With a value of 65 pin 5 will
- * be triggered followed by 6. Pins may be non contiguous. I.E. 16 or 61.
- * In GPIO mode the delay pin to pin is < .2 uS.
- *
- * Note: only with a value of 56 or 78 it is possible to use the lower pins for
- * actuator outputs (e.g. ESC's).
- *
- * @min 1
- * @max 12345678
- * @decimal 0
- * @reboot_required true
- * @group Camera trigger
- */
-PARAM_DEFINE_INT32(TRIG_PINS, 56);
-
-/**
  * Camera trigger distance
  *
  * Sets the distance at which to trigger the camera.

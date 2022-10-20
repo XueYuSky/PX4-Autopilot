@@ -84,12 +84,11 @@
 
 /* PWM */
 #define DIRECT_PWM_OUTPUT_CHANNELS  8
-#define DIRECT_INPUT_TIMER_CHANNELS  8
 
 /* Power supply control and monitoring GPIOs */
-#define GPIO_nPOWER_IN_A                /* PB5 */ (GPIO_INPUT|GPIO_PULLUP|GPIO_PORTB|GPIO_PIN5)
+#define GPIO_POWER_IN_A                 /* PB5 */ (GPIO_INPUT|GPIO_PULLUP|GPIO_PORTB|GPIO_PIN5)
 
-#define GPIO_nVDD_BRICK1_VALID          GPIO_nPOWER_IN_A /* Brick 1 Is Chosen */
+#define GPIO_VDD_BRICK1_VALID           GPIO_POWER_IN_A /* Brick 1 Is Chosen */
 #define BOARD_NUMBER_BRICKS             1
 
 #define GPIO_VDD_3V3_SPEKTRUM_POWER_EN  /* PE4  */ (GPIO_OUTPUT|GPIO_PUSHPULL|GPIO_SPEED_2MHz|GPIO_OUTPUT_CLEAR|GPIO_PORTE|GPIO_PIN4)
@@ -144,11 +143,9 @@
  */
 #define BOARD_ADC_USB_CONNECTED (px4_arch_gpioread(GPIO_OTGFS_VBUS))
 #define BOARD_ADC_USB_VALID     BOARD_ADC_USB_CONNECTED
-#define BOARD_ADC_BRICK_VALID   (!px4_arch_gpioread(GPIO_nVDD_BRICK1_VALID))
+#define BOARD_ADC_BRICK_VALID   (px4_arch_gpioread(GPIO_VDD_BRICK1_VALID))
 
-#define BOARD_HAS_PWM  DIRECT_PWM_OUTPUT_CHANNELS
 #define BOARD_NUM_IO_TIMERS 3
-#define BOARD_DSHOT_MOTOR_ASSIGNMENT {3, 2, 1, 0, 4, 5, 6, 7};
 #define BOARD_DMA_ALLOC_POOL_SIZE 5120 /* This board provides a DMA pool and APIs */
 #define BOARD_HAS_ON_RESET 1 /* This board provides the board_on_reset interface */
 #define BOARD_ENABLE_CONSOLE_BUFFER
@@ -163,7 +160,7 @@
 		GPIO_CAN2_SILENT_S0,              \
 		GPIO_LEVEL_SHIFTER_OE,            \
 		GPIO_PWM_VOLT_SEL,                \
-		GPIO_nPOWER_IN_A,                 \
+		GPIO_POWER_IN_A,                  \
 		GPIO_VDD_3V3_SPEKTRUM_POWER_EN,   \
 		PX4_GPIO_PIN_OFF(GPIO_SDMMC1_D0), \
 		PX4_GPIO_PIN_OFF(GPIO_SDMMC1_D1), \

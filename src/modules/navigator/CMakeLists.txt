@@ -48,15 +48,9 @@ px4_add_module(
 		precland.cpp
 		mission_feasibility_checker.cpp
 		geofence.cpp
-		enginefailure.cpp
-		gpsfailure.cpp
-		follow_target.cpp
+		vtol_takeoff.cpp
 	DEPENDS
-		git_ecl
-		ecl_geo
-		landing_slope
+		geo
 		geofence_breach_avoidance
 		motion_planning
 	)
-
-px4_add_functional_gtest(SRC RangeRTLTest.cpp LINKLIBS modules__navigator modules__dataman)

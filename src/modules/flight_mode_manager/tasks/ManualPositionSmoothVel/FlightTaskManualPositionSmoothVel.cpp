@@ -38,14 +38,14 @@
 
 using namespace matrix;
 
-bool FlightTaskManualPositionSmoothVel::activate(const vehicle_local_position_setpoint_s &last_setpoint)
+bool FlightTaskManualPositionSmoothVel::activate(const trajectory_setpoint_s &last_setpoint)
 {
 	bool ret = FlightTaskManualPosition::activate(last_setpoint);
 
 	// Check if the previous FlightTask provided setpoints
 	Vector3f accel_prev{last_setpoint.acceleration};
-	Vector3f vel_prev{last_setpoint.vx, last_setpoint.vy, last_setpoint.vz};
-	Vector3f pos_prev{last_setpoint.x, last_setpoint.y, last_setpoint.z};
+	Vector3f vel_prev{last_setpoint.velocity};
+	Vector3f pos_prev{last_setpoint.position};
 
 	for (int i = 0; i < 3; i++) {
 		// If the position setpoint is unknown, set to the current postion
@@ -73,22 +73,22 @@ void FlightTaskManualPositionSmoothVel::reActivate()
 	_smoothing_z.reset(0.f, 0.f, _position(2));
 }
 
-void FlightTaskManualPositionSmoothVel::_ekfResetHandlerPositionXY()
+void FlightTaskManualPositionSmoothVel::_ekfResetHandlerPositionXY(const matrix::Vector2f &delta_xy)
 {
 	_smoothing_xy.setCurrentPosition(_position.xy());
 }
 
-void FlightTaskManualPositionSmoothVel::_ekfResetHandlerVelocityXY()
+void FlightTaskManualPositionSmoothVel::_ekfResetHandlerVelocityXY(const matrix::Vector2f &delta_vxy)
 {
 	_smoothing_xy.setCurrentVelocity(_velocity.xy());
 }
 
-void FlightTaskManualPositionSmoothVel::_ekfResetHandlerPositionZ()
+void FlightTaskManualPositionSmoothVel::_ekfResetHandlerPositionZ(float delta_z)
 {
 	_smoothing_z.setCurrentPosition(_position(2));
 }
 
-void FlightTaskManualPositionSmoothVel::_ekfResetHandlerVelocityZ()
+void FlightTaskManualPositionSmoothVel::_ekfResetHandlerVelocityZ(float delta_vz)
 {
 	_smoothing_z.setCurrentVelocity(_velocity(2));
 }
@@ -120,7 +120,7 @@ void FlightTaskManualPositionSmoothVel::_updateTrajConstraintsXY()
 {
 	_smoothing_xy.setMaxJerk(_param_mpc_jerk_max.get());
 	_smoothing_xy.setMaxAccel(_param_mpc_acc_hor_max.get());
-	_smoothing_xy.setMaxVel(_constraints.speed_xy);
+	_smoothing_xy.setMaxVel(_param_mpc_vel_manual.get());
 }
 
 void FlightTaskManualPositionSmoothVel::_updateTrajConstraintsZ()

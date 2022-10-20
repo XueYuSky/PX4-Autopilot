@@ -1,6 +1,6 @@
 /****************************************************************************
  *
- *   Copyright (c) 2012-2020 PX4 Development Team. All rights reserved.
+ *   Copyright (c) 2012-2022 PX4 Development Team. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -140,16 +140,22 @@ void LoadMon::cpuload()
 #elif defined(__PX4_NUTTX)
 
 	if (_last_idle_time == 0) {
+		irqstate_t irqstate = enter_critical_section();
 		// Just get the time in the first iteration */
 		_last_idle_time = system_load.tasks[0].total_runtime;
-		_last_idle_time_sample = hrt_absolute_time();
+		_last_idle_time_sample = system_load.tasks[0].curr_start_time;
+		leave_critical_section(irqstate);
 		return;
 	}
 
 	irqstate_t irqstate = enter_critical_section();
-	const hrt_abstime now = hrt_absolute_time();
+	const hrt_abstime now = system_load.tasks[0].curr_start_time;
 	const hrt_abstime total_runtime = system_load.tasks[0].total_runtime;
 	leave_critical_section(irqstate);
+
+	if ((now == _last_idle_time_sample) || (total_runtime == _last_idle_time)) {
+		return;
+	}
 
 	// compute system load
 	const float interval = now - _last_idle_time_sample;
@@ -242,7 +248,6 @@ void LoadMon::cpuload()
 void LoadMon::stack_usage()
 {
 	unsigned stack_free = 0;
-	unsigned fds_free = FDS_LOW_WARNING_THRESHOLD + 1;
 
 	bool checked_task = false;
 
@@ -261,22 +266,19 @@ void LoadMon::stack_usage()
 
 		checked_task = true;
 
-#if CONFIG_NFILE_DESCRIPTORS > 0
-		FAR struct task_group_s *group = system_load.tasks[_stack_task_index].tcb->group;
+#if CONFIG_NFILE_DESCRIPTORS_PER_BLOCK > 0
+		unsigned int tcb_num_used_fds = 0; // number of used file descriptors
+		struct filelist *filelist = &system_load.tasks[_stack_task_index].tcb->group->tg_filelist;
 
-		unsigned tcb_num_used_fds = 0;
-
-		if (group) {
-			for (int fd_index = 0; fd_index < CONFIG_NFILE_DESCRIPTORS; ++fd_index) {
-				if (group->tg_filelist.fl_files[fd_index].f_inode) {
+		for (int fdr = 0; fdr < filelist->fl_rows; fdr++) {
+			for (int fdc = 0; fdc < CONFIG_NFILE_DESCRIPTORS_PER_BLOCK; fdc++) {
+				if (filelist->fl_files[fdr][fdc].f_inode) {
 					++tcb_num_used_fds;
 				}
 			}
-
-			fds_free = CONFIG_NFILE_DESCRIPTORS - tcb_num_used_fds;
 		}
 
-#endif // CONFIG_NFILE_DESCRIPTORS
+#endif // CONFIG_NFILE_DESCRIPTORS_PER_BLOCK
 	}
 
 	sched_unlock();
@@ -291,15 +293,10 @@ void LoadMon::stack_usage()
 		if (stack_free < STACK_LOW_WARNING_THRESHOLD) {
 			PX4_WARN("%s low on stack! (%i bytes left)", task_stack_info.task_name, stack_free);
 		}
-
-		// Found task low on file descriptors, report and exit. Continue here in next cycle.
-		if (fds_free < FDS_LOW_WARNING_THRESHOLD) {
-			PX4_WARN("%s low on FDs! (%i FDs left)", task_stack_info.task_name, fds_free);
-		}
 	}
 
 	// Continue after last checked task next cycle
-	_stack_task_index = (_stack_task_index + 1) % CONFIG_MAX_TASKS;
+	_stack_task_index = (_stack_task_index + 1) % CONFIG_FS_PROCFS_MAX_TASKS;
 }
 #endif
 

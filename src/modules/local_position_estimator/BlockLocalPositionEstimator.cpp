@@ -19,13 +19,10 @@ static const char *msg_label = "[lpe] ";	// rate of land detector correction
 
 BlockLocalPositionEstimator::BlockLocalPositionEstimator() :
 	ModuleParams(nullptr),
-	WorkItem(MODULE_NAME, px4::wq_configurations::nav_and_controllers),
+	WorkItem(MODULE_NAME, px4::wq_configurations::INS0),
 
 	// this block has no parent, and has name LPE
 	SuperBlock(nullptr, "LPE"),
-
-	// map projection
-	_map_ref(),
 
 	// flow gyro
 	_flow_gyro_x_high_pass(this, "FGYRO_HP"),
@@ -123,9 +120,6 @@ BlockLocalPositionEstimator::BlockLocalPositionEstimator() :
 	_u.setZero();
 	initSS();
 
-	// map
-	_map_ref.init_done = false;
-
 	// print fusion settings to console
 	PX4_INFO("fuse gps: %d, flow: %d, vis_pos: %d, "
 		 "landing_target: %d, land: %d, pub_agl_z: %d, flow_gyro: %d, "
@@ -144,7 +138,7 @@ bool
 BlockLocalPositionEstimator::init()
 {
 	if (!_sensors_sub.registerCallback()) {
-		PX4_ERR("sensor combined callback registration failed!");
+		PX4_ERR("callback registration failed");
 		return false;
 	}
 
@@ -176,7 +170,7 @@ void BlockLocalPositionEstimator::Run()
 				const double longitude = vehicle_command.param6;
 				const float altitude = vehicle_command.param7;
 
-				map_projection_init_timestamped(&_global_local_proj_ref, latitude, longitude, vehicle_command.timestamp);
+				_global_local_proj_ref.initReference(latitude, longitude, vehicle_command.timestamp);
 				_global_local_alt0 = altitude;
 
 				PX4_INFO("New NED origin (LLA): %3.10f, %3.10f, %4.3f\n", latitude, longitude, static_cast<double>(altitude));
@@ -351,10 +345,10 @@ void BlockLocalPositionEstimator::Run()
 	checkTimeouts();
 
 	// if we have no lat, lon initialize projection to LPE_LAT, LPE_LON parameters
-	if (!_map_ref.init_done && (_estimatorInitialized & EST_XY) && _param_lpe_fake_origin.get()) {
-		map_projection_init(&_map_ref,
-				    (double)_param_lpe_lat.get(),
-				    (double)_param_lpe_lon.get());
+	if (!_map_ref.isInitialized() && (_estimatorInitialized & EST_XY) && _param_lpe_fake_origin.get()) {
+		_map_ref.initReference(
+			(double)_param_lpe_lat.get(),
+			(double)_param_lpe_lon.get());
 
 		// set timestamp when origin was set to current time
 		_time_origin = _timeStamp;
@@ -519,7 +513,7 @@ void BlockLocalPositionEstimator::Run()
 		_pub_innov_var.get().timestamp = hrt_absolute_time();
 		_pub_innov_var.update();
 
-		if ((_estimatorInitialized & EST_XY) && (_map_ref.init_done || _param_lpe_fake_origin.get())) {
+		if ((_estimatorInitialized & EST_XY) && (_map_ref.isInitialized() || _param_lpe_fake_origin.get())) {
 			publishGlobalPos();
 		}
 	}
@@ -587,9 +581,8 @@ void BlockLocalPositionEstimator::publishLocalPos()
 	}
 
 	// publish local position
-	if (PX4_ISFINITE(_x(X_x)) && PX4_ISFINITE(_x(X_y)) && PX4_ISFINITE(_x(X_z)) &&
-	    PX4_ISFINITE(_x(X_vx)) && PX4_ISFINITE(_x(X_vy))
-	    && PX4_ISFINITE(_x(X_vz))) {
+	if (Vector3f(_x(X_x), _x(X_y), _x(X_z)).isAllFinite() &&
+	    Vector3f(_x(X_vx), _x(X_vy), _x(X_vz)).isAllFinite()) {
 		_pub_lpos.get().timestamp_sample = _timeStamp;
 
 		_pub_lpos.get().xy_valid = _estimatorInitialized & EST_XY;
@@ -623,8 +616,8 @@ void BlockLocalPositionEstimator::publishLocalPos()
 		_pub_lpos.get().xy_global = _estimatorInitialized & EST_XY;
 		_pub_lpos.get().z_global = !(_sensorTimeout & SENSOR_BARO) && _altOriginGlobal;
 		_pub_lpos.get().ref_timestamp = _time_origin;
-		_pub_lpos.get().ref_lat = _map_ref.lat_rad * 180 / M_PI;
-		_pub_lpos.get().ref_lon = _map_ref.lon_rad * 180 / M_PI;
+		_pub_lpos.get().ref_lat = _map_ref.getProjectionReferenceLat();
+		_pub_lpos.get().ref_lon = _map_ref.getProjectionReferenceLon();
 		_pub_lpos.get().ref_alt = _altOrigin;
 		_pub_lpos.get().dist_bottom = _aglLowPass.getState();
 		// we estimate agl even when we don't have terrain info
@@ -650,22 +643,20 @@ void BlockLocalPositionEstimator::publishOdom()
 	const Vector<float, n_x> &xLP = _xLowPass.getState();
 
 	// publish vehicle odometry
-	if (PX4_ISFINITE(_x(X_x)) && PX4_ISFINITE(_x(X_y)) && PX4_ISFINITE(_x(X_z)) &&
-	    PX4_ISFINITE(_x(X_vx)) && PX4_ISFINITE(_x(X_vy))
-	    && PX4_ISFINITE(_x(X_vz))) {
-
+	if (Vector3f(_x(X_x), _x(X_y), _x(X_z)).isAllFinite() &&
+	    Vector3f(_x(X_vx), _x(X_vy), _x(X_vz)).isAllFinite()) {
 		_pub_odom.get().timestamp_sample = _timeStamp;
-		_pub_odom.get().local_frame = vehicle_odometry_s::LOCAL_FRAME_NED;
+		_pub_odom.get().pose_frame = vehicle_odometry_s::POSE_FRAME_NED;
 
 		// position
-		_pub_odom.get().x = xLP(X_x);	// north
-		_pub_odom.get().y = xLP(X_y);	// east
+		_pub_odom.get().position[0] = xLP(X_x);	// north
+		_pub_odom.get().position[1] = xLP(X_y);	// east
 
 		if (_param_lpe_fusion.get() & FUSE_PUB_AGL_Z) {
-			_pub_odom.get().z = -_aglLowPass.getState();	// agl
+			_pub_odom.get().position[2] = -_aglLowPass.getState();	// agl
 
 		} else {
-			_pub_odom.get().z = xLP(X_z);	// down
+			_pub_odom.get().position[2] = xLP(X_z);	// down
 		}
 
 		// orientation
@@ -673,51 +664,45 @@ void BlockLocalPositionEstimator::publishOdom()
 		q.copyTo(_pub_odom.get().q);
 
 		// linear velocity
-		_pub_odom.get().velocity_frame = vehicle_odometry_s::LOCAL_FRAME_FRD;
-		_pub_odom.get().vx = xLP(X_vx);		// vel north
-		_pub_odom.get().vy = xLP(X_vy);		// vel east
-		_pub_odom.get().vz = xLP(X_vz);		// vel down
+		_pub_odom.get().velocity_frame = vehicle_odometry_s::VELOCITY_FRAME_FRD;
+		_pub_odom.get().velocity[0] = xLP(X_vx);		// vel north
+		_pub_odom.get().velocity[1] = xLP(X_vy);		// vel east
+		_pub_odom.get().velocity[2] = xLP(X_vz);		// vel down
 
 		// angular velocity
-		_pub_odom.get().rollspeed = _sub_angular_velocity.get().xyz[0]; // roll rate
-		_pub_odom.get().pitchspeed = _sub_angular_velocity.get().xyz[1]; // pitch rate
-		_pub_odom.get().yawspeed = _sub_angular_velocity.get().xyz[2]; // yaw rate
+		_pub_odom.get().angular_velocity[0] = NAN;
+		_pub_odom.get().angular_velocity[1] = NAN;
+		_pub_odom.get().angular_velocity[2] = NAN;
 
 		// get the covariance matrix size
-		const size_t POS_URT_SIZE = sizeof(_pub_odom.get().pose_covariance) / sizeof(_pub_odom.get().pose_covariance[0]);
-		const size_t VEL_URT_SIZE = sizeof(_pub_odom.get().velocity_covariance) / sizeof(
-						    _pub_odom.get().velocity_covariance[0]);
+		const size_t POS_URT_SIZE = sizeof(_pub_odom.get().position_variance) / sizeof(_pub_odom.get().position_variance[0]);
+		const size_t VEL_URT_SIZE = sizeof(_pub_odom.get().velocity_variance) / sizeof(_pub_odom.get().velocity_variance[0]);
 
 		// initially set pose covariances to 0
 		for (size_t i = 0; i < POS_URT_SIZE; i++) {
-			_pub_odom.get().pose_covariance[i] = 0.0;
+			_pub_odom.get().position_variance[i] = NAN;
 		}
 
 		// set the position variances
-		_pub_odom.get().pose_covariance[_pub_odom.get().COVARIANCE_MATRIX_X_VARIANCE] = m_P(X_vx, X_vx);
-		_pub_odom.get().pose_covariance[_pub_odom.get().COVARIANCE_MATRIX_Y_VARIANCE] = m_P(X_vy, X_vy);
-		_pub_odom.get().pose_covariance[_pub_odom.get().COVARIANCE_MATRIX_Z_VARIANCE] = m_P(X_vz, X_vz);
+		_pub_odom.get().position_variance[0] = m_P(X_vx, X_vx);
+		_pub_odom.get().position_variance[1] = m_P(X_vy, X_vy);
+		_pub_odom.get().position_variance[2] = m_P(X_vz, X_vz);
 
 		// unknown orientation covariances
 		// TODO: add orientation covariance to vehicle_attitude
-		_pub_odom.get().pose_covariance[_pub_odom.get().COVARIANCE_MATRIX_ROLL_VARIANCE] = NAN;
-		_pub_odom.get().pose_covariance[_pub_odom.get().COVARIANCE_MATRIX_PITCH_VARIANCE] = NAN;
-		_pub_odom.get().pose_covariance[_pub_odom.get().COVARIANCE_MATRIX_YAW_VARIANCE] = NAN;
+		_pub_odom.get().orientation_variance[0] = NAN;
+		_pub_odom.get().orientation_variance[1] = NAN;
+		_pub_odom.get().orientation_variance[2] = NAN;
 
 		// initially set velocity covariances to 0
 		for (size_t i = 0; i < VEL_URT_SIZE; i++) {
-			_pub_odom.get().velocity_covariance[i] = 0.0;
+			_pub_odom.get().velocity_variance[i] = NAN;
 		}
 
 		// set the linear velocity variances
-		_pub_odom.get().velocity_covariance[_pub_odom.get().COVARIANCE_MATRIX_VX_VARIANCE] = m_P(X_vx, X_vx);
-		_pub_odom.get().velocity_covariance[_pub_odom.get().COVARIANCE_MATRIX_VY_VARIANCE] = m_P(X_vy, X_vy);
-		_pub_odom.get().velocity_covariance[_pub_odom.get().COVARIANCE_MATRIX_VZ_VARIANCE] = m_P(X_vz, X_vz);
-
-		// unknown angular velocity covariances
-		_pub_odom.get().velocity_covariance[_pub_odom.get().COVARIANCE_MATRIX_ROLLRATE_VARIANCE] = NAN;
-		_pub_odom.get().velocity_covariance[_pub_odom.get().COVARIANCE_MATRIX_PITCHRATE_VARIANCE] = NAN;
-		_pub_odom.get().velocity_covariance[_pub_odom.get().COVARIANCE_MATRIX_YAWRATE_VARIANCE] = NAN;
+		_pub_odom.get().velocity_variance[0] = m_P(X_vx, X_vx);
+		_pub_odom.get().velocity_variance[1] = m_P(X_vy, X_vy);
+		_pub_odom.get().velocity_variance[2] = m_P(X_vz, X_vz);
 
 		_pub_odom.get().timestamp = hrt_absolute_time();
 		_pub_odom.update();
@@ -785,7 +770,7 @@ void BlockLocalPositionEstimator::publishGlobalPos()
 	double lat = 0;
 	double lon = 0;
 	const Vector<float, n_x> &xLP = _xLowPass.getState();
-	map_projection_reproject(&_map_ref, xLP(X_x), xLP(X_y), &lat, &lon);
+	_map_ref.reproject(xLP(X_x), xLP(X_y), lat, lon);
 	float alt = -xLP(X_z) + _altOrigin;
 
 	// lie about eph/epv to allow visual odometry only navigation when velocity est. good
@@ -807,8 +792,7 @@ void BlockLocalPositionEstimator::publishGlobalPos()
 	}
 
 	if (PX4_ISFINITE(lat) && PX4_ISFINITE(lon) && PX4_ISFINITE(alt) &&
-	    PX4_ISFINITE(xLP(X_vx)) && PX4_ISFINITE(xLP(X_vy)) &&
-	    PX4_ISFINITE(xLP(X_vz))) {
+	    Vector3f(xLP(X_vx), xLP(X_vy), xLP(X_vz)).isAllFinite()) {
 		_pub_gpos.get().timestamp_sample = _timeStamp;
 		_pub_gpos.get().lat = lat;
 		_pub_gpos.get().lon = lon;

@@ -1,6 +1,6 @@
 /****************************************************************************
  *
- *   Copyright (c) 2019-2020 PX4 Development Team. All rights reserved.
+ *   Copyright (c) 2019-2022 PX4 Development Team. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -40,17 +40,16 @@ static constexpr int16_t combine(uint8_t msb, uint8_t lsb)
 	return (msb << 8u) | lsb;
 }
 
-AK09916::AK09916(I2CSPIBusOption bus_option, int bus, int bus_frequency, enum Rotation rotation) :
-	I2C(DRV_MAG_DEVTYPE_AK09916, MODULE_NAME, bus, I2C_ADDRESS_DEFAULT, bus_frequency),
-	I2CSPIDriver(MODULE_NAME, px4::device_bus_to_wq(get_device_id()), bus_option, bus),
-	_px4_mag(get_device_id(), rotation)
+AK09916::AK09916(const I2CSPIDriverConfig &config) :
+	I2C(config),
+	I2CSPIDriver(config),
+	_px4_mag(get_device_id(), config.rotation)
 {
-	_px4_mag.set_external(external());
 }
 
 AK09916::~AK09916()
 {
-	perf_free(_transfer_perf);
+	perf_free(_reset_perf);
 	perf_free(_bad_register_perf);
 	perf_free(_bad_transfer_perf);
 	perf_free(_magnetic_sensor_overflow_perf);
@@ -80,7 +79,7 @@ void AK09916::print_status()
 {
 	I2CSPIDriverBase::print_status();
 
-	perf_print_counter(_transfer_perf);
+	perf_print_counter(_reset_perf);
 	perf_print_counter(_bad_register_perf);
 	perf_print_counter(_bad_transfer_perf);
 	perf_print_counter(_magnetic_sensor_overflow_perf);
@@ -88,31 +87,39 @@ void AK09916::print_status()
 
 int AK09916::probe()
 {
-	const uint8_t WIA1 = RegisterRead(Register::WIA1);
+	// 3 retries
+	for (int i = 0; i < 3; i++) {
 
-	if (WIA1 != Company_ID) {
-		DEVICE_DEBUG("unexpected WIA1 0x%02x", WIA1);
-		return PX4_ERROR;
+		const uint8_t WIA1 = RegisterRead(Register::WIA1);
+		const uint8_t WIA2 = RegisterRead(Register::WIA2);
+
+		if ((WIA1 == Company_ID) && (WIA2 == Device_ID)) {
+			return PX4_OK;
+		}
+
+		if (WIA1 != Company_ID) {
+			DEVICE_DEBUG("unexpected WIA1 0x%02x", WIA1);
+		}
+
+		if (WIA2 != Device_ID) {
+			DEVICE_DEBUG("unexpected WIA2 0x%02x", WIA2);
+		}
 	}
 
-	const uint8_t WIA2 = RegisterRead(Register::WIA2);
-
-	if (WIA2 != Device_ID) {
-		DEVICE_DEBUG("unexpected WIA2 0x%02x", WIA2);
-		return PX4_ERROR;
-	}
-
-	return PX4_OK;
+	return PX4_ERROR;
 }
 
 void AK09916::RunImpl()
 {
+	const hrt_abstime now = hrt_absolute_time();
+
 	switch (_state) {
 	case STATE::RESET:
+		perf_count(_reset_perf);
 		// CNTL3 SRST: Soft reset
 		RegisterWrite(Register::CNTL3, CNTL3_BIT::SRST);
-		_reset_timestamp = hrt_absolute_time();
-		_consecutive_failures = 0;
+		_reset_timestamp = now;
+		_failure_count = 0;
 		_state = STATE::WAIT_FOR_RESET;
 		ScheduleDelayed(100_ms);
 		break;
@@ -120,16 +127,14 @@ void AK09916::RunImpl()
 	case STATE::WAIT_FOR_RESET:
 		if ((RegisterRead(Register::WIA1) == Company_ID) && (RegisterRead(Register::WIA2) == Device_ID)) {
 			// if reset succeeded then configure
-			RegisterWrite(Register::CNTL2, CNTL2_BIT::MODE3);
 			_state = STATE::CONFIGURE;
 			ScheduleDelayed(100_ms);
 
 		} else {
 			// RESET not complete
-			if (hrt_elapsed_time(&_reset_timestamp) > 1000_ms) {
-				PX4_DEBUG("Reset failed, retrying");
-				_state = STATE::RESET;
-				ScheduleDelayed(100_ms);
+			if (hrt_elapsed_time(&_reset_timestamp) > 30_s) {
+				PX4_ERR("Reset failed, retrying");
+				Reset();
 
 			} else {
 				PX4_DEBUG("Reset not complete, check again in 100 ms");
@@ -147,26 +152,34 @@ void AK09916::RunImpl()
 
 		} else {
 			// CONFIGURE not complete
-			if (hrt_elapsed_time(&_reset_timestamp) > 1000_ms) {
-				PX4_DEBUG("Configure failed, resetting");
-				_state = STATE::RESET;
+			if (hrt_elapsed_time(&_reset_timestamp) > 30_s) {
+				PX4_ERR("Configure failed, resetting");
+				Reset();
 
 			} else {
 				PX4_DEBUG("Configure failed, retrying");
+				ScheduleDelayed(100_ms);
 			}
-
-			ScheduleDelayed(100_ms);
 		}
 
 		break;
 
 	case STATE::READ: {
-			perf_begin(_transfer_perf);
-			TransferBuffer buffer{};
-			const hrt_abstime timestamp_sample = hrt_absolute_time();
+
+			struct TransferBuffer {
+				uint8_t ST1;
+				uint8_t HXL;
+				uint8_t HXH;
+				uint8_t HYL;
+				uint8_t HYH;
+				uint8_t HZL;
+				uint8_t HZH;
+				uint8_t TMPS;
+				uint8_t ST2;
+			} buffer{};
+
 			uint8_t cmd = static_cast<uint8_t>(Register::ST1);
 			int ret = transfer(&cmd, 1, (uint8_t *)&buffer, sizeof(TransferBuffer));
-			perf_end(_transfer_perf);
 
 			bool success = false;
 
@@ -180,30 +193,40 @@ void AK09916::RunImpl()
 					const int16_t z = combine(buffer.HZH, buffer.HZL);
 
 					// sensor's frame is +X forward (X), +Y right (Y), +Z down (Z)
-					_px4_mag.update(timestamp_sample, x, y, z);
+					_px4_mag.set_error_count(perf_event_count(_bad_register_perf) + perf_event_count(_bad_transfer_perf)
+								 + perf_event_count(_magnetic_sensor_overflow_perf));
+
+					_px4_mag.update(now, x, y, z);
 
 					success = true;
 
-					_consecutive_failures = 0;
+					if (_failure_count > 0) {
+						_failure_count--;
+					}
+				}
+			}
+
+			if (!success) {
+				_failure_count++;
+
+				// full reset if things are failing consistently
+				if (_failure_count > 10) {
+					Reset();
+					return;
 				}
 			}
 
 			if (!success || hrt_elapsed_time(&_last_config_check_timestamp) > 100_ms) {
 				// check configuration registers periodically or immediately following any failure
 				if (RegisterCheck(_register_cfg[_checked_register])) {
-					_last_config_check_timestamp = timestamp_sample;
+					_last_config_check_timestamp = now;
 					_checked_register = (_checked_register + 1) % size_register_cfg;
 
 				} else {
 					// register check failed, force reset
 					perf_count(_bad_register_perf);
 					Reset();
-					return;
 				}
-			}
-
-			if (_consecutive_failures > 10) {
-				Reset();
 			}
 		}
 
@@ -213,9 +236,11 @@ void AK09916::RunImpl()
 
 bool AK09916::Configure()
 {
+	_retries = 2;
+
 	// first set and clear all configured register bits
 	for (const auto &reg_cfg : _register_cfg) {
-		RegisterWrite(reg_cfg.reg, reg_cfg.set_bits);
+		RegisterSetAndClearBits(reg_cfg.reg, reg_cfg.set_bits, reg_cfg.clear_bits);
 	}
 
 	// now check that all are configured

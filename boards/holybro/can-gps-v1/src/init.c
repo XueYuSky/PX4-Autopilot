@@ -53,6 +53,7 @@
 #include <string.h>
 #include <debug.h>
 #include <errno.h>
+#include <syslog.h>
 
 #include <nuttx/board.h>
 #include <nuttx/i2c/i2c_master.h>
@@ -65,7 +66,8 @@
 #include <arch/board/board.h>
 
 #include <drivers/drv_hrt.h>
-#include <drivers/drv_board_led.h>
+
+#include "led.h"
 
 #include <systemlib/px4_macros.h>
 
@@ -77,20 +79,6 @@
 # if defined(FLASH_BASED_PARAMS)
 #  include <parameters/flashparams/flashfs.h>
 #endif
-
-/*
- * Ideally we'd be able to get these from arm_internal.h,
- * but since we want to be able to disable the NuttX use
- * of leds for system indication at will and there is no
- * separate switch, we need to build independent of the
- * CONFIG_ARCH_LEDS configuration switch.
- */
-__BEGIN_DECLS
-extern void led_init(void);
-extern void led_on(int led);
-extern void led_off(int led);
-__END_DECLS
-
 
 /************************************************************************************
  * Name: stm32_boardinitialize
@@ -147,6 +135,8 @@ stm32_boardinitialize(void)
 
 __EXPORT int board_app_initialize(uintptr_t arg)
 {
+	VDD_3V3_SENSORS_EN(true);
+
 	px4_platform_init();
 
 	if (OK == board_determine_hw_info()) {
@@ -172,36 +162,16 @@ __EXPORT int board_app_initialize(uintptr_t arg)
 
 	if (result != OK) {
 		syslog(LOG_ERR, "[boot] FAILED to init params in FLASH %d\n", result);
-		return -ENODEV;
 	}
 
 #endif // FLASH_BASED_PARAMS
 
-
 #if defined(SERIAL_HAVE_RXDMA)
-	/* set up the serial DMA polling */
+	// set up the serial DMA polling at 1ms intervals for received bytes that have not triggered a DMA event.
 	static struct hrt_call serial_dma_call;
-
-	/*
-	 * Poll at 1ms intervals for received bytes that have not triggered
-	 * a DMA event.
-	 */
-	struct timespec ts;
-	ts.tv_sec = 0;
-	ts.tv_nsec = 1000000;
-
-	hrt_call_every(&serial_dma_call,
-		       ts_to_abstime(&ts),
-		       ts_to_abstime(&ts),
-		       (hrt_callout)stm32_serial_dma_poll,
-		       NULL);
+	hrt_call_every(&serial_dma_call, 1000, 1000, (hrt_callout)stm32_serial_dma_poll, NULL);
 #endif
 
-	/* initial LED state */
-	drv_led_start();
-	led_off(LED_RED);
-	led_on(LED_GREEN); // Indicate Power.
-	led_off(LED_BLUE);
-
+	rgb_led(0, 255, 0, 0);
 	return OK;
 }

@@ -46,13 +46,13 @@
 /**
  * L1 period
  *
- * This is the L1 distance and defines the tracking
- * point ahead of the aircraft its following.
- * A value of 18-25 meters works for most aircraft. Shorten
+ * Used to determine the L1 gain and controller time constant. This parameter is
+ * proportional to the L1 distance (which points ahead of the aircraft on the path
+ * it is following). A value of 18-25 seconds works for most aircraft. Shorten
  * slowly during tuning until response is sharp without oscillation.
  *
- * @unit m
- * @min 12.0
+ * @unit s
+ * @min 7.0
  * @max 50.0
  * @decimal 1
  * @increment 0.5
@@ -76,7 +76,7 @@ PARAM_DEFINE_FLOAT(FW_L1_DAMPING, 0.75f);
 /**
  * L1 controller roll slew rate limit.
  *
- * The maxium change in roll angle setpoint per second.
+ * The maximum change in roll angle setpoint per second.
  *
  * @unit deg/s
  * @min 0
@@ -86,36 +86,162 @@ PARAM_DEFINE_FLOAT(FW_L1_DAMPING, 0.75f);
 PARAM_DEFINE_FLOAT(FW_L1_R_SLEW_MAX, 90.0f);
 
 /**
- * Cruise throttle
+ * Use NPFG as lateral-directional guidance law for fixed-wing vehicles
  *
- * This is the throttle setting required to achieve the desired cruise speed. Most airframes have a value of 0.5-0.7.
+ * Replaces L1.
+ *
+ * @boolean
+ * @group FW NPFG Control
+ */
+PARAM_DEFINE_INT32(FW_USE_NPFG, 0);
+
+/**
+ * NPFG period
+ *
+ * Period of the NPFG control law.
+ *
+ * @unit s
+ * @min 1.0
+ * @max 100.0
+ * @decimal 1
+ * @increment 0.1
+ * @group FW NPFG Control
+ */
+PARAM_DEFINE_FLOAT(NPFG_PERIOD, 10.0f);
+
+/**
+ * NPFG damping ratio
+ *
+ * Damping ratio of the NPFG control law.
+ *
+ * @min 0.10
+ * @max 1.00
+ * @decimal 2
+ * @increment 0.01
+ * @group FW NPFG Control
+ */
+PARAM_DEFINE_FLOAT(NPFG_DAMPING, 0.7f);
+
+/**
+ * Enable automatic lower bound on the NPFG period
+ *
+ * Avoids limit cycling from a too aggressively tuned period/damping combination.
+ * If set to false, also disables the upper bound NPFG_PERIOD_UB.
+ *
+ * @boolean
+ * @group FW NPFG Control
+ */
+PARAM_DEFINE_INT32(NPFG_LB_PERIOD, 1);
+
+/**
+ * Enable automatic upper bound on the NPFG period
+ *
+ * Adapts period to maintain track keeping in variable winds and path curvature.
+ *
+ * @boolean
+ * @group FW NPFG Control
+ */
+PARAM_DEFINE_INT32(NPFG_UB_PERIOD, 1);
+
+/**
+ * Enable track keeping excess wind handling logic.
+ *
+ * @boolean
+ * @group FW NPFG Control
+ */
+PARAM_DEFINE_INT32(NPFG_TRACK_KEEP, 1);
+
+/**
+ * Enable minimum forward ground speed maintaining excess wind handling logic
+ *
+ * @boolean
+ * @group FW NPFG Control
+ */
+PARAM_DEFINE_INT32(NPFG_EN_MIN_GSP, 1);
+
+/**
+ * Enable wind excess regulation.
+ *
+ * Disabling this parameter further disables all other airspeed incrementation options.
+ *
+ * @boolean
+ * @group FW NPFG Control
+ */
+PARAM_DEFINE_INT32(NPFG_WIND_REG, 1);
+
+/**
+ * Maximum, minimum forward ground speed for track keeping in excess wind
+ *
+ * The maximum value of the minimum forward ground speed that may be commanded
+ * by the track keeping excess wind handling logic. Commanded in full at the normalized
+ * track error fraction of the track error boundary and reduced to zero on track.
+ *
+ * @unit m/s
+ * @min 0.0
+ * @max 10.0
+ * @decimal 1
+ * @increment 0.5
+ * @group FW NPFG Control
+ */
+PARAM_DEFINE_FLOAT(NPFG_GSP_MAX_TK, 5.0f);
+
+/**
+ * Roll time constant
+ *
+ * Time constant of roll controller command / response, modeled as first order delay.
+ * Used to determine lower period bound. Setting zero disables automatic period bounding.
+ *
+ * @unit s
+ * @min 0.00
+ * @max 2.00
+ * @decimal 2
+ * @increment 0.05
+ * @group FW NPFG Control
+ */
+PARAM_DEFINE_FLOAT(NPFG_ROLL_TC, 0.5f);
+
+/**
+ * NPFG switch distance multiplier
+ *
+ * Multiplied by the track error boundary to determine when the aircraft switches
+ * to the next waypoint and/or path segment. Should be less than 1. 1/pi (0.32)
+ * sets the switch distance equivalent to that of the L1 controller.
+ *
+ * @min 0.1
+ * @max 1.0
+ * @decimal 2
+ * @increment 0.01
+ * @group FW NPFG Control
+ */
+PARAM_DEFINE_FLOAT(NPFG_SW_DST_MLT, 0.32f);
+
+/**
+ * Period safety factor
+ *
+ * Multiplied by period for conservative minimum period bounding (when period lower
+ * bounding is enabled). 1.0 bounds at marginal stability.
+ *
+ * @min 1.0
+ * @max 10.0
+ * @decimal 1
+ * @increment 0.1
+ * @group FW NPFG Control
+ */
+PARAM_DEFINE_FLOAT(NPFG_PERIOD_SF, 1.5f);
+
+/**
+ * Trim throttle
+ *
+ * This is the throttle setting required to achieve FW_AIRSPD_TRIM during level flight. Most airframes have a value of 0.5-0.7.
  *
  * @unit norm
  * @min 0.0
  * @max 1.0
  * @decimal 2
  * @increment 0.01
- * @group FW L1 Control
+ * @group FW TECS
  */
-PARAM_DEFINE_FLOAT(FW_THR_CRUISE, 0.6f);
-
-/**
- * Scale throttle by pressure change
- *
- * Automatically adjust throttle to account for decreased air density at higher altitudes.
- * Start with a scale factor of 1.0 and adjust for different propulsion systems.
- *
- * When flying without airspeed sensor this will help to keep a constant performance over large altitude ranges.
- *
- * The default value of 0 will disable scaling.
- *
- * @min 0.0
- * @max 10.0
- * @decimal 1
- * @increment 0.1
- * @group FW L1 Control
- */
-PARAM_DEFINE_FLOAT(FW_THR_ALT_SCL, 0.0f);
+PARAM_DEFINE_FLOAT(FW_THR_TRIM, 0.6f);
 
 /**
  * Throttle max slew rate
@@ -124,42 +250,42 @@ PARAM_DEFINE_FLOAT(FW_THR_ALT_SCL, 0.0f);
  *
  * @min 0.0
  * @max 1.0
- * @group FW L1 Control
+ * @group FW TECS
  */
 PARAM_DEFINE_FLOAT(FW_THR_SLEW_MAX, 0.0f);
 
 /**
- * Negative pitch limit
+ * Minimum pitch angle
  *
- * The minimum negative pitch the controller will output.
+ * The minimum pitch angle setpoint for autonomous modes including altitude and position control.
  *
  * @unit deg
  * @min -60.0
  * @max 0.0
  * @decimal 1
  * @increment 0.5
- * @group FW L1 Control
+ * @group FW TECS
  */
-PARAM_DEFINE_FLOAT(FW_P_LIM_MIN, -45.0f);
+PARAM_DEFINE_FLOAT(FW_P_LIM_MIN, -30.0f);
 
 /**
- * Positive pitch limit
+ * Maximum pitch angle
  *
- * The maximum positive pitch the controller will output.
+ * The maximum pitch angle setpoint for autonomous modes including altitude and position control.
  *
  * @unit deg
  * @min 0.0
  * @max 60.0
  * @decimal 1
  * @increment 0.5
- * @group FW L1 Control
+ * @group FW TECS
  */
-PARAM_DEFINE_FLOAT(FW_P_LIM_MAX, 45.0f);
+PARAM_DEFINE_FLOAT(FW_P_LIM_MAX, 30.0f);
 
 /**
- * Controller roll limit
+ * Maximum roll angle
  *
- * The maximum roll the controller will output.
+ * The maximum roll angle setpoint for autonomous modes including altitude and position control.
  *
  * @unit deg
  * @min 35.0
@@ -182,7 +308,7 @@ PARAM_DEFINE_FLOAT(FW_R_LIM, 50.0f);
  * @max 1.0
  * @decimal 2
  * @increment 0.01
- * @group FW L1 Control
+ * @group FW TECS
  */
 PARAM_DEFINE_FLOAT(FW_THR_MAX, 1.0f);
 
@@ -203,7 +329,7 @@ PARAM_DEFINE_FLOAT(FW_THR_MAX, 1.0f);
  * @max 1.0
  * @decimal 2
  * @increment 0.01
- * @group FW L1 Control
+ * @group FW TECS
  */
 PARAM_DEFINE_FLOAT(FW_THR_MIN, 0.0f);
 
@@ -212,32 +338,20 @@ PARAM_DEFINE_FLOAT(FW_THR_MIN, 0.0f);
  *
  * This is the minimum throttle while on the ground
  *
- * For aircraft with internal combustion engine this parameter should be set
- * above desired idle rpm.
+ * For aircraft with internal combustion engines, this parameter should be set
+ * above the desired idle rpm. For electric motors, idle should typically be set
+ * to zero.
+ *
+ * Note that in automatic modes, "landed" conditions will engage idle throttle.
  *
  * @unit norm
  * @min 0.0
  * @max 0.4
  * @decimal 2
  * @increment 0.01
- * @group FW L1 Control
+ * @group FW TECS
  */
-PARAM_DEFINE_FLOAT(FW_THR_IDLE, 0.15f);
-
-/**
- * Throttle limit during landing below throttle limit altitude
- *
- * During the flare of the autonomous landing process, this value will be set
- * as throttle limit when the aircraft altitude is below FW_LND_TLALT.
- *
- * @unit norm
- * @min 0.0
- * @max 1.0
- * @decimal 2
- * @increment 0.01
- * @group FW L1 Control
- */
-PARAM_DEFINE_FLOAT(FW_THR_LND_MAX, 1.0f);
+PARAM_DEFINE_FLOAT(FW_THR_IDLE, 0.0f);
 
 /**
  * Climbout Altitude difference
@@ -257,14 +371,17 @@ PARAM_DEFINE_FLOAT(FW_THR_LND_MAX, 1.0f);
 PARAM_DEFINE_FLOAT(FW_CLMBOUT_DIFF, 10.0f);
 
 /**
- * Landing slope angle
+ * Maximum landing slope angle
+ *
+ * Typically the desired landing slope angle when landing configuration (flaps, airspeed) is enabled.
+ * Set this value within the vehicle's performance limits.
  *
  * @unit deg
  * @min 1.0
  * @max 15.0
  * @decimal 1
  * @increment 0.5
- * @group FW L1 Control
+ * @group FW Auto Landing
  */
 PARAM_DEFINE_FLOAT(FW_LND_ANG, 5.0f);
 
@@ -281,68 +398,36 @@ PARAM_DEFINE_FLOAT(FW_LND_ANG, 5.0f);
 PARAM_DEFINE_FLOAT(FW_TKO_PITCH_MIN, 10.0f);
 
 /**
- *
- *
- * @unit m
- * @min 1.0
- * @max 15.0
- * @decimal 1
- * @increment 0.5
- * @group FW L1 Control
- */
-PARAM_DEFINE_FLOAT(FW_LND_HVIRT, 10.0f);
-
-/**
  * Landing flare altitude (relative to landing altitude)
+ *
+ * NOTE: max(FW_LND_FLALT, FW_LND_FL_TIME * |z-velocity|) is taken as the flare altitude
  *
  * @unit m
  * @min 0.0
- * @max 25.0
  * @decimal 1
  * @increment 0.5
- * @group FW L1 Control
+ * @group FW Auto Landing
  */
-PARAM_DEFINE_FLOAT(FW_LND_FLALT, 3.0f);
+PARAM_DEFINE_FLOAT(FW_LND_FLALT, 0.5f);
 
 /**
- * Landing throttle limit altitude (relative landing altitude)
+ * Use terrain estimation during landing. This is critical for detecting when to flare, and should be enabled if possible.
  *
- * Default of -1.0 lets the system default to applying throttle
- * limiting at 2/3 of the flare altitude.
+ * NOTE: terrain estimate is currently solely derived from a distance sensor.
  *
- * @unit m
- * @min -1.0
- * @max 30.0
- * @decimal 1
- * @increment 0.5
- * @group FW L1 Control
- */
-PARAM_DEFINE_FLOAT(FW_LND_TLALT, -1.0f);
-
-/**
- * Landing heading hold horizontal distance.
+ * If enabled and no measurement is found within a given timeout, the landing waypoint altitude will be used OR the landing
+ * will be aborted, depending on the criteria set in FW_LND_ABORT.
  *
- * Set to 0 to disable heading hold.
+ * If disabled, FW_LND_ABORT terrain based criteria are ignored.
  *
- * @unit m
  * @min 0
- * @max 30.0
- * @decimal 1
- * @increment 0.5
- * @group FW L1 Control
+ * @max 2
+ * @value 0 Disable the terrain estimate
+ * @value 1 Use the terrain estimate to trigger the flare (only)
+ * @value 2 Calculate landing glide slope relative to the terrain estimate
+ * @group FW Auto Landing
  */
-PARAM_DEFINE_FLOAT(FW_LND_HHDIST, 15.0f);
-
-/**
- * Use terrain estimate during landing.
- *
- * This is turned off by default and a waypoint or return altitude is normally used
- * (or sea level for an arbitrary land position).
- *
- * @boolean
- * @group FW L1 Control
- */
-PARAM_DEFINE_INT32(FW_LND_USETER, 0);
+PARAM_DEFINE_INT32(FW_LND_USETER, 1);
 
 /**
  * Early landing configuration deployment
@@ -356,7 +441,7 @@ PARAM_DEFINE_INT32(FW_LND_USETER, 0);
  *
  * @boolean
  *
- * @group FW L1 Control
+ * @group FW Auto Landing
  */
 PARAM_DEFINE_INT32(FW_LND_EARLYCFG, 0);
 
@@ -364,14 +449,14 @@ PARAM_DEFINE_INT32(FW_LND_EARLYCFG, 0);
  * Flare, minimum pitch
  *
  * Minimum pitch during flare, a positive sign means nose up
- * Applied once FW_LND_FLALT is reached
+ * Applied once flaring is triggered
  *
  * @unit deg
  * @min 0
  * @max 15.0
  * @decimal 1
  * @increment 0.5
- * @group FW L1 Control
+ * @group FW Auto Landing
  */
 PARAM_DEFINE_FLOAT(FW_LND_FL_PMIN, 2.5f);
 
@@ -379,14 +464,14 @@ PARAM_DEFINE_FLOAT(FW_LND_FL_PMIN, 2.5f);
  * Flare, maximum pitch
  *
  * Maximum pitch during flare, a positive sign means nose up
- * Applied once FW_LND_FLALT is reached
+ * Applied once flaring is triggered
  *
  * @unit deg
  * @min 0
  * @max 45.0
  * @decimal 1
  * @increment 0.5
- * @group FW L1 Control
+ * @group FW Auto Landing
  */
 PARAM_DEFINE_FLOAT(FW_LND_FL_PMAX, 15.0f);
 
@@ -402,7 +487,7 @@ PARAM_DEFINE_FLOAT(FW_LND_FL_PMAX, 15.0f);
  * @max 1.5
  * @decimal 2
  * @increment 0.01
- * @group FW L1 Control
+ * @group FW Auto Landing
  */
 PARAM_DEFINE_FLOAT(FW_LND_AIRSPD_SC, 1.3f);
 
@@ -418,7 +503,7 @@ PARAM_DEFINE_FLOAT(FW_LND_AIRSPD_SC, 1.3f);
  * @min 0.2
  * @max 1.0
  * @increment 0.1
- * @group FW L1 Control
+ * @group FW Auto Landing
  */
 PARAM_DEFINE_FLOAT(FW_LND_THRTC_SC, 1.0f);
 
@@ -433,7 +518,8 @@ PARAM_DEFINE_FLOAT(FW_LND_THRTC_SC, 1.0f);
 /**
  * Minimum Airspeed (CAS)
  *
- * If the CAS (calibrated airspeed) falls below this value, the TECS controller will try to
+ * The minimal airspeed (calibrated airspeed) the user is able to command.
+ * Further, if the airspeed falls below this value, the TECS controller will try to
  * increase airspeed more aggressively.
  *
  * @unit m/s
@@ -475,6 +561,22 @@ PARAM_DEFINE_FLOAT(FW_AIRSPD_MAX, 20.0f);
  * @group FW TECS
  */
 PARAM_DEFINE_FLOAT(FW_AIRSPD_TRIM, 15.0f);
+
+/**
+ * Stall Airspeed (CAS)
+ *
+ * The stall airspeed (calibrated airspeed) of the vehicle.
+ * It is used for airspeed sensor failure detection and for the control
+ * surface scaling airspeed limits.
+ *
+ * @unit m/s
+ * @min 0.5
+ * @max 40
+ * @decimal 1
+ * @increment 0.5
+ * @group FW TECS
+ */
+PARAM_DEFINE_FLOAT(FW_AIRSPD_STALL, 7.0f);
 
 /**
  * Maximum climb rate
@@ -724,17 +826,17 @@ PARAM_DEFINE_FLOAT(FW_T_TAS_TC, 5.0f);
 PARAM_DEFINE_FLOAT(FW_GND_SPD_MIN, 5.0f);
 
 /**
- * RC stick mapping fixed-wing.
+ * RC stick configuration fixed-wing.
  *
- * Set RC/joystick configuration for fixed-wing position and altitude controlled flight.
+ * Set RC/joystick configuration for fixed-wing manual position and altitude controlled flight.
  *
  * @min 0
- * @max 1
- * @value 0 Normal stick configuration (airspeed on throttle stick, altitude on pitch stick)
- * @value 1 Alternative stick configuration (altitude on throttle stick, airspeed on pitch stick)
+ * @max 3
+ * @bit 0 Alternative stick configuration (height rate on throttle stick, airspeed on pitch stick)
+ * @bit 1 Enable airspeed setpoint via sticks in altitude and position flight mode
  * @group FW L1 Control
  */
-PARAM_DEFINE_INT32(FW_POSCTL_INV_ST, 0);
+PARAM_DEFINE_INT32(FW_POS_STK_CONF, 2);
 
 /**
  * Specific total energy rate first order filter time constant.
@@ -775,3 +877,219 @@ PARAM_DEFINE_FLOAT(FW_T_TAS_R_TC, 0.2f);
  * @group FW TECS
  */
 PARAM_DEFINE_FLOAT(FW_T_SEB_R_FF, 1.0f);
+
+/**
+ * Default target climbrate.
+ *
+ *
+ * The default rate at which the vehicle will climb in autonomous modes to achieve altitude setpoints.
+ * In manual modes this defines the maximum rate at which the altitude setpoint can be increased.
+ *
+ *
+ * @unit m/s
+ * @min 0.5
+ * @max 15
+ * @decimal 2
+ * @increment 0.01
+ * @group FW TECS
+ */
+PARAM_DEFINE_FLOAT(FW_T_CLMB_R_SP, 3.0f);
+
+/**
+ * Default target sinkrate.
+ *
+ *
+ * The default rate at which the vehicle will sink in autonomous modes to achieve altitude setpoints.
+ * In manual modes this defines the maximum rate at which the altitude setpoint can be decreased.
+ *
+ * @unit m/s
+ * @min 0.5
+ * @max 15
+ * @decimal 2
+ * @increment 0.01
+ * @group FW TECS
+ */
+PARAM_DEFINE_FLOAT(FW_T_SINK_R_SP, 2.0f);
+
+/**
+ * GPS failure loiter time
+ *
+ * The time in seconds the system should do open loop loiter and wait for GPS recovery
+ * before it starts descending. Set to 0 to disable. Roll angle is set to FW_GPSF_R.
+ * Does only apply for fixed-wing vehicles or VTOLs with NAV_FORCE_VT set to 0.
+ *
+ * @unit s
+ * @min 0
+ * @max 3600
+ * @group Mission
+ */
+PARAM_DEFINE_INT32(FW_GPSF_LT, 30);
+
+/**
+ * GPS failure fixed roll angle
+ *
+ * Roll in degrees during the loiter after the vehicle has lost GPS in an auto mode (e.g. mission or loiter).
+ * Does only apply for fixed-wing vehicles or VTOLs with NAV_FORCE_VT set to 0.
+ *
+ * @unit deg
+ * @min 0.0
+ * @max 30.0
+ * @decimal 1
+ * @increment 0.5
+ * @group Mission
+ */
+PARAM_DEFINE_FLOAT(FW_GPSF_R, 15.0f);
+
+/**
+ * Vehicle base weight.
+ *
+ * This is the weight of the vehicle at which it's performance limits were derived. A zero or negative value
+ * disables trim throttle and minimum airspeed compensation based on weight.
+ *
+ * @unit kg
+ * @decimal 1
+ * @increment 0.5
+ * @group Mission
+ */
+PARAM_DEFINE_FLOAT(WEIGHT_BASE, -1.0f);
+
+/**
+ * Vehicle gross weight.
+ *
+ * This is the actual weight of the vehicle at any time. This value will differ from WEIGHT_BASE in case weight was added
+ * or removed from the base weight. Examples are the addition of payloads or larger batteries. A zero or negative value
+ * disables trim throttle and minimum airspeed compensation based on weight.
+ *
+ * @unit kg
+ * @decimal 1
+ * @increment 0.1
+ * @group Mission
+ */
+PARAM_DEFINE_FLOAT(WEIGHT_GROSS, -1.0f);
+
+/**
+ * The aircraft's wing span (length from tip to tip).
+ *
+ * This is used for limiting the roll setpoint near the ground. (if multiple wings, take the longest span)
+ *
+ * @unit m
+ * @min 0.1
+ * @decimal 1
+ * @increment 0.1
+ * @group FW Geometry
+ */
+PARAM_DEFINE_FLOAT(FW_WING_SPAN, 3.0);
+
+/**
+ * Height (AGL) of the wings when the aircraft is on the ground.
+ *
+ * This is used to constrain a minimum altitude below which we keep wings level to avoid wing tip strike. It's safer
+ * to give a slight margin here (> 0m)
+ *
+ * @unit m
+ * @min 0.0
+ * @decimal 1
+ * @increment 1
+ * @group FW Geometry
+ */
+PARAM_DEFINE_FLOAT(FW_WING_HEIGHT, 0.5);
+
+/**
+ * Landing flare time
+ *
+ * Multiplied by the descent rate to calculate a dynamic altitude at which
+ * to trigger the flare.
+ *
+ * NOTE: max(FW_LND_FLALT, FW_LND_FL_TIME * descent rate) is taken as the flare altitude
+ *
+ * @unit s
+ * @min 0.0
+ * @max 5.0
+ * @decimal 1
+ * @increment 0.1
+ * @group FW Auto Landing
+ */
+PARAM_DEFINE_FLOAT(FW_LND_FL_TIME, 1.0f);
+
+/**
+ * Landing flare sink rate
+ *
+ * TECS will attempt to control the aircraft to this sink rate via pitch angle (throttle killed during flare)
+ *
+ * @unit m/s
+ * @min 0.0
+ * @max 1.0
+ * @decimal 1
+ * @increment 0.1
+ * @group FW Auto Landing
+ */
+PARAM_DEFINE_FLOAT(FW_LND_FL_SINK, 0.25f);
+
+/**
+ * Maximum lateral position offset for the touchdown point
+ *
+ * @unit m
+ * @min 0.0
+ * @max 10.0
+ * @decimal 1
+ * @increment 1
+ * @group FW Auto Landing
+ */
+PARAM_DEFINE_FLOAT(FW_LND_TD_OFF, 3.0);
+
+/**
+ * Landing touchdown nudging option.
+ *
+ * Approach angle nudging: shifts the touchdown point laterally while keeping the approach entrance point constant
+ * Approach path nudging: shifts the touchdown point laterally along with the entire approach path
+ *
+ * This is useful for manually adjusting the landing point in real time when map or GNSS errors cause an offset from the
+ * desired landing vector. Nuding is done with yaw stick, constrained to FW_LND_TD_OFF (in meters) and the direction is
+ * relative to the vehicle heading (stick deflection to the right = land point moves to the right as seen by the vehicle).
+ *
+ * @min 0
+ * @max 2
+ * @value 0 Disable nudging
+ * @value 1 Nudge approach angle
+ * @value 2 Nudge approach path
+ * @group FW Auto Landing
+ */
+PARAM_DEFINE_INT32(FW_LND_NUDGE, 2);
+
+/**
+ * Bit mask to set the automatic landing abort conditions.
+ *
+ * Terrain estimation:
+ * bit 0: Abort if terrain is not found
+ * bit 1: Abort if terrain times out (after a first successful measurement)
+ *
+ * The last estimate is always used as ground, whether the last valid measurement or the land waypoint, depending on the
+ * selected abort criteria, until an abort condition is entered. If FW_LND_USETER == 0, these bits are ignored.
+ *
+ * TODO: Extend automatic abort conditions
+ * e.g. glide slope tracking error (horizontal and vertical)
+ *
+ * @min 0
+ * @max 3
+ * @bit 0 Abort if terrain is not found
+ * @bit 1 Abort if terrain times out (after a first successful measurement)
+ * @group FW Auto Landing
+ */
+PARAM_DEFINE_INT32(FW_LND_ABORT, 3);
+
+/**
+ * Wind-based airspeed scaling factor
+ *
+ * Multiplying this factor with the current absolute wind estimate gives the airspeed offset
+ * added to the minimum airspeed setpoint limit. This helps to make the
+ * system more robust against disturbances (turbulence) in high wind.
+ * Only applies to AUTO flight mode.
+ *
+ * airspeed_min_adjusted = FW_AIRSPD_MIN + FW_WIND_ARSP_SC * wind.length()
+ *
+ * @min 0
+ * @decimal 2
+ * @increment 0.01
+ * @group FW TECS
+ */
+PARAM_DEFINE_FLOAT(FW_WIND_ARSP_SC, 0.f);
