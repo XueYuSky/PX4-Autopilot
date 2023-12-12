@@ -266,7 +266,6 @@ px4fmu_firmware: \
 
 misc_qgc_extra_firmware: \
 	check_nxp_fmuk66-v3_default \
-	check_nxp_fmurt1062-v1_default \
 	check_mro_x21_default \
 	check_bitcraze_crazyflie_default \
 	check_bitcraze_crazyflie21_default \
@@ -388,17 +387,17 @@ tests_coverage:
 
 
 rostest: px4_sitl_default
-	@$(MAKE) --no-print-directory px4_sitl_default sitl_gazebo
+	@$(MAKE) --no-print-directory px4_sitl_default sitl_gazebo-classic
 
 tests_integration: px4_sitl_default
-	@$(MAKE) --no-print-directory px4_sitl_default sitl_gazebo
+	@$(MAKE) --no-print-directory px4_sitl_default sitl_gazebo-classic
 	@$(MAKE) --no-print-directory px4_sitl_default mavsdk_tests
 	@"$(SRC_DIR)"/test/mavsdk_tests/mavsdk_test_runner.py --speed-factor 20 test/mavsdk_tests/configs/sitl.json
 
 tests_integration_coverage:
 	@$(MAKE) clean
 	@$(MAKE) --no-print-directory px4_sitl_default PX4_CMAKE_BUILD_TYPE=Coverage
-	@$(MAKE) --no-print-directory px4_sitl_default sitl_gazebo
+	@$(MAKE) --no-print-directory px4_sitl_default sitl_gazebo-classic
 	@$(MAKE) --no-print-directory px4_sitl_default mavsdk_tests
 	@"$(SRC_DIR)"/test/mavsdk_tests/mavsdk_test_runner.py --speed-factor 20 test/mavsdk_tests/configs/sitl.json
 	@mkdir -p coverage
@@ -408,13 +407,13 @@ tests_mission: rostest
 	@"$(SRC_DIR)"/test/rostest_px4_run.sh mavros_posix_tests_missions.test
 
 rostest_run: px4_sitl_default
-	@$(MAKE) --no-print-directory px4_sitl_default sitl_gazebo
+	@$(MAKE) --no-print-directory px4_sitl_default sitl_gazebo-classic
 	@"$(SRC_DIR)"/test/rostest_px4_run.sh $(TEST_FILE) mission:=$(TEST_MISSION) vehicle:=$(TEST_VEHICLE)
 
 tests_mission_coverage:
 	@$(MAKE) clean
 	@$(MAKE) --no-print-directory px4_sitl_default PX4_CMAKE_BUILD_TYPE=Coverage
-	@$(MAKE) --no-print-directory px4_sitl_default sitl_gazebo PX4_CMAKE_BUILD_TYPE=Coverage
+	@$(MAKE) --no-print-directory px4_sitl_default sitl_gazebo-classic PX4_CMAKE_BUILD_TYPE=Coverage
 	@"$(SRC_DIR)"/test/rostest_px4_run.sh mavros_posix_test_mission.test mission:=VTOL_mission_1 vehicle:=standard_vtol
 	@$(MAKE) --no-print-directory px4_sitl_default generate_coverage
 
@@ -483,13 +482,16 @@ shellcheck_all:
 validate_module_configs:
 	@find "$(SRC_DIR)"/src/modules "$(SRC_DIR)"/src/drivers "$(SRC_DIR)"/src/lib -name *.yaml -type f \
 	-not -path "$(SRC_DIR)/src/lib/mixer_module/*" \
-	-not -path "$(SRC_DIR)/src/modules/microdds_client/dds_topics.yaml" \
+	-not -path "$(SRC_DIR)/src/modules/uxrce_dds_client/dds_topics.yaml" \
+	-not -path "$(SRC_DIR)/src/modules/zenoh/zenoh-pico/*" \
+	-not -path "$(SRC_DIR)/src/lib/events/libevents/*" \
+	-not -path "$(SRC_DIR)/src/lib/cdrstream/*" \
 	-not -path "$(SRC_DIR)/src/lib/crypto/libtommath/*" -print0 | \
 	xargs -0 "$(SRC_DIR)"/Tools/validate_yaml.py --schema-file "$(SRC_DIR)"/validation/module_schema.yaml
 
 # Cleanup
 # --------------------------------------------------------------------
-.PHONY: clean submodulesclean submodulesupdate gazeboclean distclean
+.PHONY: clean submodulesclean submodulesupdate distclean
 
 clean:
 	@[ ! -d "$(SRC_DIR)/build" ] || find "$(SRC_DIR)/build" -mindepth 1 -maxdepth 1 -type d -exec sh -c "echo {}; cmake --build {} -- clean || rm -rf {}" \; # use generated build system to clean, wipe build directory if it fails
@@ -507,10 +509,7 @@ submodulesupdate:
 	@git submodule update --init --recursive --jobs 4
 	@git fetch --all --tags --recurse-submodules=yes --jobs=4
 
-gazeboclean:
-	@rm -rf ~/.gazebo/*
-
-distclean: gazeboclean
+distclean:
 	@git submodule deinit --force $(SRC_DIR)
 	@rm -rf "$(SRC_DIR)/build"
 	@git clean --force -X "$(SRC_DIR)/msg/" "$(SRC_DIR)/platforms/" "$(SRC_DIR)/posix-configs/" "$(SRC_DIR)/ROMFS/" "$(SRC_DIR)/src/" "$(SRC_DIR)/test/" "$(SRC_DIR)/Tools/"
@@ -550,20 +549,13 @@ check_px4: $(call make_list,nuttx,"px4") \
 check_nxp: $(call make_list,nuttx,"nxp") \
 	sizes
 
-ifneq ($(ROS2_WS_DIR),)
-  ROS2_WS_DIR := $(basename ${ROS2_WS_DIR})
-else
-  ROS2_WS_DIR := ~/colcon_ws
-endif
+# helpers for running olddefconfig (nuttx) and px4_savedefconfig on all boards
+.PHONY: all_oldconfig all_px4_savedefconfig
+all_oldconfig:
+	@for targ in $(ALL_CONFIG_TARGETS); do $(MAKE) $$targ oldconfig; done
 
-update_ros2_bridge:
-	@Tools/update_px4_ros2_bridge.sh --ws_dir ${ROS2_WS_DIR} --all
-
-update_px4_ros_com:
-	@Tools/update_px4_ros2_bridge.sh --ws_dir ${ROS2_WS_DIR} --px4_ros_com
-
-update_px4_msgs:
-	@Tools/update_px4_ros2_bridge.sh --ws_dir ${ROS2_WS_DIR} --px4_msgs
+all_px4_savedefconfig:
+	@for targ in $(ALL_CONFIG_TARGETS); do $(MAKE) $$targ px4_savedefconfig; done
 
 .PHONY: failsafe_web run_failsafe_web_server
 failsafe_web:

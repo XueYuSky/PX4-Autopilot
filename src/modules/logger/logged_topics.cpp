@@ -47,9 +47,6 @@ void LoggedTopics::add_default_topics()
 {
 	add_topic("action_request");
 	add_topic("actuator_armed");
-	add_topic("actuator_controls_0", 50);
-	add_topic("actuator_controls_1", 100);
-	add_topic("actuator_controls_2", 100);
 	add_optional_topic("actuator_controls_status_0", 300);
 	add_topic("airspeed", 1000);
 	add_optional_topic("airspeed_validated", 200);
@@ -58,24 +55,34 @@ void LoggedTopics::add_default_topics()
 	add_optional_topic("camera_trigger");
 	add_topic("cellular_status", 200);
 	add_topic("commander_state");
+	add_topic("config_overrides");
 	add_topic("cpuload");
+	add_optional_topic("external_ins_attitude");
+	add_optional_topic("external_ins_global_position");
+	add_optional_topic("external_ins_local_position");
 	add_optional_topic("esc_status", 250);
 	add_topic("failure_detector_status", 100);
 	add_topic("failsafe_flags");
 	add_optional_topic("follow_target", 500);
 	add_optional_topic("follow_target_estimator", 200);
 	add_optional_topic("follow_target_status", 400);
+	add_optional_topic("flaps_setpoint", 1000);
 	add_topic("gimbal_manager_set_attitude", 500);
 	add_optional_topic("generator_status");
 	add_optional_topic("gps_dump");
+	add_optional_topic("gimbal_controls", 200);
 	add_optional_topic("gripper");
 	add_optional_topic("heater_status");
 	add_topic("home_position");
 	add_topic("hover_thrust_estimate", 100);
 	add_topic("input_rc", 500);
 	add_optional_topic("internal_combustion_engine_status", 10);
+	add_optional_topic("iridiumsbd_status", 1000);
 	add_optional_topic("irlock_report", 1000);
+	add_optional_topic("landing_gear", 200);
+	add_optional_topic("landing_gear_wheel", 100);
 	add_optional_topic("landing_target_pose", 1000);
+	add_optional_topic("launch_detection_status", 200);
 	add_optional_topic("magnetometer_bias_estimate", 200);
 	add_topic("manual_control_setpoint", 200);
 	add_topic("manual_control_switches");
@@ -87,6 +94,7 @@ void LoggedTopics::add_default_topics()
 	add_topic("parameter_update");
 	add_topic("position_controller_status", 500);
 	add_topic("position_controller_landing_status", 100);
+	add_topic("goto_setpoint", 200);
 	add_topic("position_setpoint_triplet", 200);
 	add_optional_topic("px4io_status");
 	add_topic("radio_status");
@@ -96,9 +104,11 @@ void LoggedTopics::add_default_topics()
 	add_optional_topic("sensor_gyro_fft", 50);
 	add_topic("sensor_selection");
 	add_topic("sensors_status_imu", 200);
+	add_optional_topic("spoilers_setpoint", 1000);
 	add_topic("system_power", 500);
 	add_optional_topic("takeoff_status", 1000);
 	add_optional_topic("tecs_status", 200);
+	add_optional_topic("tiltrotor_extra_controls", 100);
 	add_topic("trajectory_setpoint", 200);
 	add_topic("transponder_report");
 	add_topic("vehicle_acceleration", 50);
@@ -111,7 +121,7 @@ void LoggedTopics::add_default_topics()
 	add_topic("vehicle_constraints", 1000);
 	add_topic("vehicle_control_mode");
 	add_topic("vehicle_global_position", 200);
-	add_topic("vehicle_gps_position", 500);
+	add_topic("vehicle_gps_position", 100);
 	add_topic("vehicle_land_detected");
 	add_topic("vehicle_local_position", 100);
 	add_topic("vehicle_local_position_setpoint", 100);
@@ -147,7 +157,7 @@ void LoggedTopics::add_default_topics()
 	add_topic("estimator_baro_bias", 500);
 	add_topic("estimator_gnss_hgt_bias", 500);
 	add_topic("estimator_rng_hgt_bias", 500);
-	add_topic("estimator_ev_hgt_bias", 500);
+	add_topic("estimator_ev_pos_bias", 500);
 	add_topic("estimator_event_flags", 0);
 	add_topic("estimator_gps_status", 1000);
 	add_topic("estimator_innovation_test_ratios", 500);
@@ -158,13 +168,12 @@ void LoggedTopics::add_default_topics()
 	add_topic("estimator_states", 1000);
 	add_topic("estimator_status", 200);
 	add_topic("estimator_status_flags", 0);
-	add_topic("estimator_visual_odometry_aligned", 200);
 	add_topic("yaw_estimator_status", 1000);
 
 	add_optional_topic_multi("estimator_baro_bias", 500, MAX_ESTIMATOR_INSTANCES);
 	add_optional_topic_multi("estimator_gnss_hgt_bias", 500, MAX_ESTIMATOR_INSTANCES);
 	add_optional_topic_multi("estimator_rng_hgt_bias", 500, MAX_ESTIMATOR_INSTANCES);
-	add_optional_topic_multi("estimator_ev_hgt_bias", 500, MAX_ESTIMATOR_INSTANCES);
+	add_optional_topic_multi("estimator_ev_pos_bias", 500, MAX_ESTIMATOR_INSTANCES);
 	add_optional_topic_multi("estimator_event_flags", 0, MAX_ESTIMATOR_INSTANCES);
 	add_optional_topic_multi("estimator_gps_status", 1000, MAX_ESTIMATOR_INSTANCES);
 	add_optional_topic_multi("estimator_innovation_test_ratios", 500, MAX_ESTIMATOR_INSTANCES);
@@ -175,7 +184,6 @@ void LoggedTopics::add_default_topics()
 	add_optional_topic_multi("estimator_states", 1000, MAX_ESTIMATOR_INSTANCES);
 	add_optional_topic_multi("estimator_status", 200, MAX_ESTIMATOR_INSTANCES);
 	add_optional_topic_multi("estimator_status_flags", 0, MAX_ESTIMATOR_INSTANCES);
-	add_optional_topic_multi("estimator_visual_odometry_aligned", 200, MAX_ESTIMATOR_INSTANCES);
 	add_optional_topic_multi("yaw_estimator_status", 1000, MAX_ESTIMATOR_INSTANCES);
 
 	// add_optional_topic_multi("estimator_aid_src_airspeed", 100, MAX_ESTIMATOR_INSTANCES);
@@ -183,6 +191,7 @@ void LoggedTopics::add_default_topics()
 	// add_optional_topic_multi("estimator_aid_src_ev_pos", 100, MAX_ESTIMATOR_INSTANCES);
 	// add_optional_topic_multi("estimator_aid_src_ev_vel", 100, MAX_ESTIMATOR_INSTANCES);
 	// add_optional_topic_multi("estimator_aid_src_ev_yaw", 100, MAX_ESTIMATOR_INSTANCES);
+	// add_optional_topic_multi("estimator_aid_src_gravity", 100, MAX_ESTIMATOR_INSTANCES);
 	// add_optional_topic_multi("estimator_aid_src_rng_hgt", 100, MAX_ESTIMATOR_INSTANCES);
 	// add_optional_topic_multi("estimator_aid_src_fake_hgt", 100, MAX_ESTIMATOR_INSTANCES);
 	// add_optional_topic_multi("estimator_aid_src_fake_pos", 100, MAX_ESTIMATOR_INSTANCES);
@@ -192,7 +201,9 @@ void LoggedTopics::add_default_topics()
 	// add_optional_topic_multi("estimator_aid_src_mag_heading", 100, MAX_ESTIMATOR_INSTANCES);
 	// add_optional_topic_multi("estimator_aid_src_mag", 100, MAX_ESTIMATOR_INSTANCES);
 	// add_optional_topic_multi("estimator_aid_src_optical_flow", 100, MAX_ESTIMATOR_INSTANCES);
+	// add_optional_topic_multi("estimator_aid_src_terrain_optical_flow", 100, MAX_ESTIMATOR_INSTANCES);
 	// add_optional_topic_multi("estimator_aid_src_ev_yaw", 100, MAX_ESTIMATOR_INSTANCES);
+	//add_optional_topic_multi("estimator_aid_src_aux_global_position", 100, MAX_ESTIMATOR_INSTANCES);
 
 	// log all raw sensors at minimal rate (at least 1 Hz)
 	add_topic_multi("battery_status", 200, 2);
@@ -210,14 +221,14 @@ void LoggedTopics::add_default_topics()
 	add_topic_multi("vehicle_imu_status", 1000, 4);
 	add_optional_topic_multi("vehicle_magnetometer", 500, 4);
 	add_topic("vehicle_optical_flow", 500);
+	add_topic("aux_global_position", 500);
 	//add_optional_topic("vehicle_optical_flow_vel", 100);
 	add_optional_topic("pps_capture");
 
 	// additional control allocation logging
 	add_topic("actuator_motors", 100);
 	add_topic("actuator_servos", 100);
-	add_topic("vehicle_angular_acceleration", 20);
-	add_topic_multi("vehicle_thrust_setpoint", 20, 1);
+	add_topic_multi("vehicle_thrust_setpoint", 20, 2);
 	add_topic_multi("vehicle_torque_setpoint", 20, 2);
 
 	// SYS_HITL: default ground truth logging for simulation
@@ -232,12 +243,13 @@ void LoggedTopics::add_default_topics()
 	}
 
 #ifdef CONFIG_ARCH_BOARD_PX4_SITL
-	add_topic("actuator_controls_virtual_fw");
-	add_topic("actuator_controls_virtual_mc");
 	add_topic("fw_virtual_attitude_setpoint");
 	add_topic("mc_virtual_attitude_setpoint");
+	add_optional_topic("vehicle_torque_setpoint_virtual_mc");
+	add_optional_topic("vehicle_torque_setpoint_virtual_fw");
+	add_optional_topic("vehicle_thrust_setpoint_virtual_mc");
+	add_optional_topic("vehicle_thrust_setpoint_virtual_fw");
 	add_topic("time_offset");
-	add_topic("vehicle_angular_acceleration", 10);
 	add_topic("vehicle_angular_velocity", 10);
 	add_topic("vehicle_angular_velocity_groundtruth", 10);
 	add_topic("vehicle_attitude_groundtruth", 10);
@@ -248,7 +260,7 @@ void LoggedTopics::add_default_topics()
 	add_topic("estimator_baro_bias");
 	add_topic("estimator_gnss_hgt_bias");
 	add_topic("estimator_rng_hgt_bias");
-	add_topic("estimator_ev_hgt_bias");
+	add_topic("estimator_ev_pos_bias");
 	add_topic("estimator_event_flags");
 	add_topic("estimator_gps_status");
 	add_topic("estimator_innovation_test_ratios");
@@ -259,7 +271,6 @@ void LoggedTopics::add_default_topics()
 	add_topic("estimator_states");
 	add_topic("estimator_status");
 	add_topic("estimator_status_flags");
-	add_topic("estimator_visual_odometry_aligned");
 	add_topic("vehicle_attitude");
 	add_topic("vehicle_global_position");
 	add_topic("vehicle_local_position");
@@ -281,8 +292,9 @@ void LoggedTopics::add_default_topics()
 	add_optional_topic_multi("estimator_aid_src_gnss_yaw", 0, MAX_ESTIMATOR_INSTANCES);
 	add_optional_topic_multi("estimator_aid_src_mag_heading", 0, MAX_ESTIMATOR_INSTANCES);
 	add_optional_topic_multi("estimator_aid_src_mag", 0, MAX_ESTIMATOR_INSTANCES);
-	add_optional_topic_multi("estimator_aid_src_ev_yaw", 0, MAX_ESTIMATOR_INSTANCES);
 	add_optional_topic_multi("estimator_aid_src_optical_flow", 0, MAX_ESTIMATOR_INSTANCES);
+	add_optional_topic_multi("estimator_aid_src_terrain_optical_flow", 0, MAX_ESTIMATOR_INSTANCES);
+	add_optional_topic_multi("estimator_aid_src_terrain_range_finder", 0, MAX_ESTIMATOR_INSTANCES);
 	add_optional_topic_multi("estimator_aid_src_sideslip", 0, MAX_ESTIMATOR_INSTANCES);
 
 #endif /* CONFIG_ARCH_BOARD_PX4_SITL */
@@ -294,7 +306,6 @@ void LoggedTopics::add_high_rate_topics()
 	add_topic("manual_control_setpoint");
 	add_topic("rate_ctrl_status", 20);
 	add_topic("sensor_combined");
-	add_topic("vehicle_angular_acceleration");
 	add_topic("vehicle_angular_velocity");
 	add_topic("vehicle_attitude");
 	add_topic("vehicle_attitude_setpoint");
@@ -324,7 +335,7 @@ void LoggedTopics::add_estimator_replay_topics()
 
 	// current EKF2 subscriptions
 	add_topic("airspeed");
-	add_topic("optical_flow");
+	add_topic("vehicle_optical_flow");
 	add_topic("sensor_combined");
 	add_topic("sensor_selection");
 	add_topic("vehicle_air_data");
@@ -333,21 +344,23 @@ void LoggedTopics::add_estimator_replay_topics()
 	add_topic("vehicle_magnetometer");
 	add_topic("vehicle_status");
 	add_topic("vehicle_visual_odometry");
+	add_topic("aux_global_position");
 	add_topic_multi("distance_sensor");
 }
 
 void LoggedTopics::add_thermal_calibration_topics()
 {
-	add_topic_multi("sensor_accel", 100, 3);
-	add_topic_multi("sensor_baro", 100, 3);
-	add_topic_multi("sensor_gyro", 100, 3);
+	add_topic_multi("sensor_accel", 100, 4);
+	add_topic_multi("sensor_baro", 100, 4);
+	add_topic_multi("sensor_gyro", 100, 4);
+	add_topic_multi("sensor_mag", 100, 4);
 }
 
 void LoggedTopics::add_sensor_comparison_topics()
 {
-	add_topic_multi("sensor_accel", 100, 3);
-	add_topic_multi("sensor_baro", 100, 3);
-	add_topic_multi("sensor_gyro", 100, 3);
+	add_topic_multi("sensor_accel", 100, 4);
+	add_topic_multi("sensor_baro", 100, 4);
+	add_topic_multi("sensor_gyro", 100, 4);
 	add_topic_multi("sensor_mag", 100, 4);
 }
 
@@ -374,10 +387,8 @@ void LoggedTopics::add_raw_imu_accel_fifo()
 void LoggedTopics::add_system_identification_topics()
 {
 	// for system id need to log imu and controls at full rate
-	add_topic("actuator_controls_0");
-	add_topic("actuator_controls_1");
 	add_topic("sensor_combined");
-	add_topic("vehicle_angular_acceleration");
+	add_topic("vehicle_angular_velocity");
 	add_topic("vehicle_torque_setpoint");
 }
 

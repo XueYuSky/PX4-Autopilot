@@ -41,6 +41,7 @@
 #include "functions/FunctionGimbal.hpp"
 #include "functions/FunctionGripper.hpp"
 #include "functions/FunctionLandingGear.hpp"
+#include "functions/FunctionLandingGearWheel.hpp"
 #include "functions/FunctionManualRC.hpp"
 #include "functions/FunctionMotors.hpp"
 #include "functions/FunctionParachute.hpp"
@@ -151,10 +152,9 @@ public:
 	 * Check for subscription updates.
 	 * Call this at the very end of Run() if allow_wq_switch
 	 * @param allow_wq_switch if true
-	 * @param limit_callbacks_to_primary set to only register callbacks for primary actuator controls (if used)
 	 * @return true if subscriptions got changed
 	 */
-	bool updateSubscriptions(bool allow_wq_switch = false, bool limit_callbacks_to_primary = false);
+	bool updateSubscriptions(bool allow_wq_switch = false);
 
 	/**
 	 * unregister uORB subscription callbacks
@@ -179,6 +179,8 @@ public:
 
 	param_t functionParamHandle(int index) const { return _param_handles[index].function; }
 	param_t disarmedParamHandle(int index) const { return _param_handles[index].disarmed; }
+	param_t minParamHandle(int index) const { return _param_handles[index].min; }
+	param_t maxParamHandle(int index) const { return _param_handles[index].max; }
 
 	/**
 	 * Returns the actual failsafe value taking into account the assigned function
@@ -204,6 +206,7 @@ public:
 
 protected:
 	void updateParams() override;
+	uint16_t output_limit_calc_single(int i, float value) const;
 
 private:
 
@@ -221,8 +224,6 @@ private:
 	void initParamHandles();
 
 	void limitAndUpdateOutputs(float outputs[MAX_ACTUATORS], bool has_updates);
-
-	uint16_t output_limit_calc_single(int i, float value) const;
 
 	void output_limit_calc(const bool armed, const int num_channels, const float outputs[MAX_ACTUATORS]);
 
@@ -248,10 +249,9 @@ private:
 
 	enum class OutputLimitState {
 		OFF = 0,
-		INIT,
 		RAMP,
 		ON
-	} _output_state{OutputLimitState::INIT};
+	} _output_state{OutputLimitState::OFF};
 
 	hrt_abstime _output_time_armed{0};
 	const bool _output_ramp_up; ///< if true, motors will ramp up from disarmed to min_output after arming

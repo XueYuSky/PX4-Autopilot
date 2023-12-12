@@ -37,16 +37,24 @@
 
 #include "ekf.h"
 
-void Ekf::controlHeightFusion()
+void Ekf::controlHeightFusion(const imuSample &imu_delayed)
 {
-	checkVerticalAccelerationHealth();
+	checkVerticalAccelerationBias(imu_delayed);
+	checkVerticalAccelerationHealth(imu_delayed);
 
+#if defined(CONFIG_EKF2_BAROMETER)
 	updateGroundEffect();
 
 	controlBaroHeightFusion();
+#endif // CONFIG_EKF2_BAROMETER
+
+#if defined(CONFIG_EKF2_GNSS)
 	controlGnssHeightFusion(_gps_sample_delayed);
+#endif // CONFIG_EKF2_GNSS
+
+#if defined(CONFIG_EKF2_RANGE_FINDER)
 	controlRangeHeightFusion();
-	controlEvHeightFusion(_ev_sample_delayed);
+#endif // CONFIG_EKF2_RANGE_FINDER
 
 	checkHeightSensorRefFallback();
 }
@@ -60,8 +68,9 @@ void Ekf::checkHeightSensorRefFallback()
 
 	HeightSensor fallback_list[4];
 
-	switch (_params.height_sensor_ref) {
+	switch (static_cast<HeightSensor>(_params.height_sensor_ref)) {
 	default:
+
 	/* FALLTHROUGH */
 	case HeightSensor::UNKNOWN:
 		fallback_list[0] = HeightSensor::GNSS;
@@ -111,7 +120,108 @@ void Ekf::checkHeightSensorRefFallback()
 	}
 }
 
-void Ekf::checkVerticalAccelerationHealth()
+void Ekf::checkVerticalAccelerationBias(const imuSample &imu_delayed)
+{
+	// Run additional checks to see if the delta velocity bias has hit limits in a direction that is clearly wrong
+	// calculate accel bias term aligned with the gravity vector
+	const float dVel_bias_lim = 0.9f * _params.acc_bias_lim * _dt_ekf_avg;
+	const Vector3f delta_vel_bias = _state.accel_bias * _dt_ekf_avg;
+	const float down_dvel_bias = delta_vel_bias.dot(Vector3f(_R_to_earth.row(2)));
+
+	// check that the vertical component of accel bias is consistent with both the vertical position and velocity innovation
+	bool bad_acc_bias = false;
+
+	if (fabsf(down_dvel_bias) > dVel_bias_lim) {
+
+		bool bad_vz = false;
+
+#if defined(CONFIG_EKF2_EXTERNAL_VISION)
+
+		if (_control_status.flags.ev_hgt) {
+			if (down_dvel_bias * _aid_src_ev_vel.innovation[2] < 0.f) {
+				bad_vz = true;
+			}
+		}
+
+#endif // CONFIG_EKF2_EXTERNAL_VISION
+
+#if defined(CONFIG_EKF2_GNSS)
+
+		if (_control_status.flags.gps) {
+			if (down_dvel_bias * _aid_src_gnss_vel.innovation[2] < 0.f) {
+				bad_vz = true;
+			}
+		}
+
+#endif // CONFIG_EKF2_GNSS
+
+		if (bad_vz) {
+#if defined(CONFIG_EKF2_BAROMETER)
+
+			if (_control_status.flags.baro_hgt) {
+				if (down_dvel_bias * _aid_src_baro_hgt.innovation < 0.f) {
+					bad_acc_bias = true;
+				}
+			}
+
+#endif // CONFIG_EKF2_BAROMETER
+
+#if defined(CONFIG_EKF2_EXTERNAL_VISION)
+
+			if (_control_status.flags.ev_hgt) {
+				if (down_dvel_bias * _aid_src_ev_hgt.innovation < 0.f) {
+					bad_acc_bias = true;
+				}
+			}
+
+#endif // CONFIG_EKF2_EXTERNAL_VISION
+
+#if defined(CONFIG_EKF2_GNSS)
+
+			if (_control_status.flags.gps_hgt) {
+				if (down_dvel_bias * _aid_src_gnss_hgt.innovation < 0.f) {
+					bad_acc_bias = true;
+				}
+			}
+
+#endif // CONFIG_EKF2_GNSS
+
+#if defined(CONFIG_EKF2_RANGE_FINDER)
+
+			if (_control_status.flags.rng_hgt) {
+				if (down_dvel_bias * _aid_src_rng_hgt.innovation < 0.f) {
+					bad_acc_bias = true;
+				}
+			}
+
+#endif // CONFIG_EKF2_RANGE_FINDER
+		}
+	}
+
+	// record the pass/fail
+	if (!bad_acc_bias) {
+		_fault_status.flags.bad_acc_bias = false;
+		_time_acc_bias_check = _time_delayed_us;
+
+	} else {
+		_fault_status.flags.bad_acc_bias = true;
+	}
+
+	// if we have failed for 7 seconds continuously, reset the accel bias covariances to fix bad conditioning of
+	// the covariance matrix but preserve the variances (diagonals) to allow bias learning to continue
+	if (_fault_status.flags.bad_acc_bias && isTimedOut(_time_acc_bias_check, (uint64_t)7e6)) {
+
+		resetAccelBiasCov();
+
+		_time_acc_bias_check = imu_delayed.time_us;
+
+		_fault_status.flags.bad_acc_bias = false;
+		_warning_events.flags.invalid_accel_bias_cov_reset = true;
+		ECL_WARN("invalid accel bias - covariance reset");
+	}
+}
+
+void Ekf::checkVerticalAccelerationHealth(const imuSample &imu_delayed)
 {
 	// Check for IMU accelerometer vibration induced clipping as evidenced by the vertical
 	// innovations being positive and not stale.
@@ -122,9 +232,9 @@ void Ekf::checkVerticalAccelerationHealth()
 
 	// Check for more than 50% clipping affected IMU samples within the past 1 second
 	const uint16_t clip_count_limit = 1.f / _dt_ekf_avg;
-	const bool is_clipping = _imu_sample_delayed.delta_vel_clipping[0] ||
-				 _imu_sample_delayed.delta_vel_clipping[1] ||
-				 _imu_sample_delayed.delta_vel_clipping[2];
+	const bool is_clipping = imu_delayed.delta_vel_clipping[0] ||
+				 imu_delayed.delta_vel_clipping[1] ||
+				 imu_delayed.delta_vel_clipping[2];
 
 	if (is_clipping && _clip_counter < clip_count_limit) {
 		_clip_counter++;
@@ -142,10 +252,10 @@ void Ekf::checkVerticalAccelerationHealth()
 				    || (inertial_nav_falling_likelihood == Likelihood::HIGH);
 
 	if (bad_vert_accel) {
-		_time_bad_vert_accel = _imu_sample_delayed.time_us;
+		_time_bad_vert_accel = imu_delayed.time_us;
 
 	} else {
-		_time_good_vert_accel = _imu_sample_delayed.time_us;
+		_time_good_vert_accel = imu_delayed.time_us;
 	}
 
 	// declare a bad vertical acceleration measurement and make the declaration persist
@@ -166,17 +276,20 @@ Likelihood Ekf::estimateInertialNavFallingLikelihood() const
 	enum class ReferenceType { PRESSURE, GNSS, GROUND };
 
 	struct {
-		ReferenceType ref_type;
-		float innov;
-		float innov_var;
-		bool failed_min;
-		bool failed_lim;
+		ReferenceType ref_type{};
+		float innov{0.f};
+		float innov_var{0.f};
+		bool failed_min{false};
+		bool failed_lim{false};
 	} checks[6] {};
 
+#if defined(CONFIG_EKF2_BAROMETER)
 	if (_control_status.flags.baro_hgt) {
 		checks[0] = {ReferenceType::PRESSURE, _aid_src_baro_hgt.innovation, _aid_src_baro_hgt.innovation_variance};
 	}
+#endif // CONFIG_EKF2_BAROMETER
 
+#if defined(CONFIG_EKF2_GNSS)
 	if (_control_status.flags.gps_hgt) {
 		checks[1] = {ReferenceType::GNSS, _aid_src_gnss_hgt.innovation, _aid_src_gnss_hgt.innovation_variance};
 	}
@@ -184,11 +297,15 @@ Likelihood Ekf::estimateInertialNavFallingLikelihood() const
 	if (_control_status.flags.gps) {
 		checks[2] = {ReferenceType::GNSS, _aid_src_gnss_vel.innovation[2], _aid_src_gnss_vel.innovation_variance[2]};
 	}
+#endif // CONFIG_EKF2_GNSS
 
+#if defined(CONFIG_EKF2_RANGE_FINDER)
 	if (_control_status.flags.rng_hgt) {
 		checks[3] = {ReferenceType::GROUND, _aid_src_rng_hgt.innovation, _aid_src_rng_hgt.innovation_variance};
 	}
+#endif // CONFIG_EKF2_RANGE_FINDER
 
+#if defined(CONFIG_EKF2_EXTERNAL_VISION)
 	if (_control_status.flags.ev_hgt) {
 		checks[4] = {ReferenceType::GROUND, _aid_src_ev_hgt.innovation, _aid_src_ev_hgt.innovation_variance};
 	}
@@ -196,6 +313,7 @@ Likelihood Ekf::estimateInertialNavFallingLikelihood() const
 	if (_control_status.flags.ev_vel) {
 		checks[5] = {ReferenceType::GROUND, _aid_src_ev_vel.innovation[2], _aid_src_ev_vel.innovation_variance[2]};
 	}
+#endif // CONFIG_EKF2_EXTERNAL_VISION
 
 	// Compute the check based on innovation ratio for all the sources
 	for (unsigned i = 0; i < 6; i++) {

@@ -53,7 +53,6 @@
 
 #include <uORB/uORB.h>
 #include <uORB/topics/vehicle_status.h>
-#include <uORB/topics/actuator_controls.h>
 #include <uORB/topics/vehicle_control_mode.h>
 #include <uORB/topics/led_control.h>
 #include <uORB/topics/tune_control.h>
@@ -118,19 +117,9 @@ bool is_fixed_wing(const vehicle_status_s &current_status)
 	return current_status.system_type == VEHICLE_TYPE_FIXED_WING;
 }
 
-bool is_ground_rover(const vehicle_status_s &current_status)
-{
-	return current_status.system_type == VEHICLE_TYPE_GROUND_ROVER;
-}
-
-bool is_boat(const vehicle_status_s &current_status)
-{
-	return current_status.system_type == VEHICLE_TYPE_BOAT;
-}
-
 bool is_ground_vehicle(const vehicle_status_s &current_status)
 {
-	return is_ground_rover(current_status) || is_boat(current_status);
+	return (current_status.system_type == VEHICLE_TYPE_BOAT || current_status.system_type == VEHICLE_TYPE_GROUND_ROVER);
 }
 
 // End time for currently blinking LED message, 0 if no blink message

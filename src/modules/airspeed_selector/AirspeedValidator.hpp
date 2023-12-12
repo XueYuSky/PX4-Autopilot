@@ -59,7 +59,7 @@ struct airspeed_validator_update_data {
 	bool lpos_valid;
 	float lpos_evh;
 	float lpos_evv;
-	float att_q[4];
+	matrix::Quatf q_att;
 	float air_pressure_pa;
 	float air_temperature_celsius;
 	float accel_z;
@@ -118,7 +118,6 @@ public:
 	void set_enable_data_stuck_check(bool enable) { _data_stuck_check_enabled = enable; }
 	void set_enable_innovation_check(bool enable) { _innovation_check_enabled = enable; }
 	void set_enable_load_factor_check(bool enable) { _load_factor_check_enabled = enable; }
-	void set_enable_data_variation_check(bool enable) { _data_variation_check_enabled = enable; }
 
 private:
 
@@ -128,7 +127,6 @@ private:
 	bool _data_stuck_check_enabled{false};
 	bool _innovation_check_enabled{false};
 	bool _load_factor_check_enabled{false};
-	bool _data_variation_check_enabled{false};
 
 	// airspeed scale validity check
 	static constexpr int SCALE_CHECK_SAMPLES = 12; ///< take samples from 12 segments (every 360/12=30°)
@@ -147,20 +145,13 @@ private:
 	float _IAS_prev{0.f};
 	static constexpr uint64_t DATA_STUCK_TIMEOUT{2_s}; ///< timeout after which data stuck check triggers when data is flat
 
-	// variation check
-	bool _data_variation_test_failed{false};
-	static constexpr uint64_t VARIATION_CHECK_TIMEOUT{10_s}; ///< timeout to check for data variation after first data is received
-	hrt_abstime _time_first_data{0};
-	float _data_variation_check_ias_prev{0.f};
-	bool _variation_detected{false};
-
 	// states of innovation check
 	bool _innovations_check_failed{false};  ///< true when airspeed innovations have failed consistency checks
 	float _tas_innov_threshold{1.0}; ///< innovation error threshold for triggering innovation check failure
 	float _tas_innov_integ_threshold{-1.0}; ///< integrator innovation error threshold for triggering innovation check failure
 	uint64_t	_time_last_aspd_innov_check{0};	///< time airspeed innovation was last checked (uSec)
 	uint64_t	_time_last_tas_pass{0};		///< last time innovation checks passed
-	float		_apsd_innov_integ_state{0.0f};	///< integral of excess normalised airspeed innovation (sec)
+	float		_aspd_innov_integ_state{0.0f};	///< integral of excess normalised airspeed innovation (sec)
 	static constexpr uint64_t TAS_INNOV_FAIL_DELAY{1_s};	///< time required for innovation levels to pass or fail (usec)
 	uint64_t	_time_wind_estimator_initialized{0};		///< time last time wind estimator was initialized (uSec)
 
@@ -188,14 +179,13 @@ private:
 
 	void update_wind_estimator(const uint64_t timestamp, float airspeed_true_raw, bool lpos_valid,
 				   const matrix::Vector3f &vI,
-				   float lpos_evh, float lpos_evv, const float att_q[4]);
+				   float lpos_evh, float lpos_evv, const Quatf &q_att);
 	void update_CAS_scale_validated(bool lpos_valid, const matrix::Vector3f &vI, float airspeed_true_raw);
 	void update_CAS_scale_applied();
 	void update_CAS_TAS(float air_pressure_pa, float air_temperature_celsius);
 	void check_airspeed_data_stuck(uint64_t timestamp);
-	void check_airspeed_data_variation(uint64_t timestamp);
 	void check_airspeed_innovation(uint64_t timestamp, float estimator_status_vel_test_ratio,
-				       float estimator_status_mag_test_ratio, const matrix::Vector3f &vI);
+				       float estimator_status_mag_test_ratio, const matrix::Vector3f &vI, bool lpos_valid);
 	void check_load_factor(float accel_z);
 	void update_airspeed_valid_status(const uint64_t timestamp);
 	void reset();

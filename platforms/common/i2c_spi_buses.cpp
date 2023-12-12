@@ -1,6 +1,6 @@
 /****************************************************************************
  *
- * Copyright (C) 2020, 2021 PX4 Development Team. All rights reserved.
+ * Copyright (C) 2020-2021 PX4 Development Team. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -385,6 +385,19 @@ int BusInstanceIterator::runningInstancesCount() const
 
 	for (const auto &modules : i2c_spi_module_instances) {
 		if (strcmp(modules->_module_name, _module_name) == 0) {
+			++num_instances;
+		}
+	}
+
+	return num_instances;
+}
+
+int BusInstanceIterator::runningInstancesOnBusCount() const
+{
+	int num_instances = 0;
+
+	for (const auto &modules : i2c_spi_module_instances) {
+		if (modules->_bus == bus() && strcmp(modules->_module_name, _module_name) == 0) {
 			++num_instances;
 		}
 	}

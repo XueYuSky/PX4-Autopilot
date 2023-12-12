@@ -1,6 +1,6 @@
 /****************************************************************************
  *
- *   Copyright (C) 2015, 2021 PX4 Development Team. All rights reserved.
+ *   Copyright (C) 2015-2021 PX4 Development Team. All rights reserved.
  *   Author: @author David Sidrane <david_s5@nscdg.com>
  *
  * Redistribution and use in source and binary forms, with or without
@@ -54,11 +54,21 @@
 #include <errno.h>
 #include <debug.h>
 
+#ifdef HAS_BBSRAM
 #include <stm32_bbsram.h>
+#endif
 
 #include <systemlib/px4_macros.h>
 #include <systemlib/hardfault_log.h>
 #include <lib/version/version.h>
+
+#ifdef HAS_PROGMEM
+#include <px4_platform/progmem_dump.h>
+#endif
+
+#ifdef HAS_SSARC
+#include <ssarc_dump.h>
+#endif
 
 #include "chip.h"
 
@@ -224,7 +234,7 @@ static void identify(const char *caller)
 /****************************************************************************
  * hardfault_get_desc
  ****************************************************************************/
-static int hardfault_get_desc(char *caller, struct bbsramd_s *desc, bool silent)
+static int hardfault_get_desc(char *caller, dump_s *desc, bool silent)
 {
 	int ret = -ENOENT;
 	int fd = open(HARDFAULT_PATH, O_RDONLY);
@@ -237,7 +247,7 @@ static int hardfault_get_desc(char *caller, struct bbsramd_s *desc, bool silent)
 
 	} else {
 		ret = -EIO;
-		int rv = ioctl(fd, PX4_BBSRAM_GETDESC_IOCTL, (unsigned long)((uintptr_t)desc));
+		int rv = ioctl(fd, PX4_HF_GETDESC_IOCTL, (unsigned long)((uintptr_t)desc));
 
 		if (rv >= 0) {
 			ret = fd;
@@ -250,6 +260,39 @@ static int hardfault_get_desc(char *caller, struct bbsramd_s *desc, bool silent)
 
 	return ret;
 }
+
+#if HAS_PROGMEM
+/****************************************************************************
+ * hardfault_clear
+ ****************************************************************************/
+static int hardfault_clear(char *caller, bool silent)
+{
+	int ret = -ENOENT;
+	int fd = open(HARDFAULT_PATH, O_RDONLY);
+	int value = 1;
+
+	if (fd < 0) {
+		if (!silent) {
+			identify(caller);
+			hfsyslog(LOG_INFO, "Failed to open Fault Log file to clear [%s] (%d)\n", HARDFAULT_PATH, fd);
+		}
+
+	} else {
+		ret = -EIO;
+		int rv = ioctl(fd, PROGMEM_DUMP_CLEAR_IOCTL, (unsigned long)((uintptr_t)&value));
+
+		if (rv >= 0) {
+			ret = fd;
+
+		} else {
+			identify(caller);
+			hfsyslog(LOG_INFO, "Failed to clear progmem sector (%d)\n", rv);
+		}
+	}
+
+	return ret;
+}
+#endif
 
 /****************************************************************************
  * write_stack_detail
@@ -363,7 +406,7 @@ static int  write_stack(bool inValid, int winsize, uint32_t wtopaddr,
 						ret = -EIO;
 					}
 
-					wtopaddr--;
+					wtopaddr -= sizeof(stack_word_t);
 				}
 			}
 		}
@@ -518,7 +561,7 @@ static int write_user_stack_info(int fdout, info_s *pi, char *buffer,
 /****************************************************************************
  * write_dump_info
  ****************************************************************************/
-static int write_dump_info(int fdout, info_s *info, struct bbsramd_s *desc,
+static int write_dump_info(int fdout, info_s *info, dump_s *desc,
 			   char *buffer, unsigned int sz)
 {
 	char fmtbuff[ TIME_FMT_LEN + 1];
@@ -621,7 +664,7 @@ static int write_intterupt_stack(int fdin, int fdout, info_s *pi, char *buffer,
 		lseek(fdin, offsetof(fullcontext_s, istack), SEEK_SET);
 		ret = write_stack((pi->flags & eInvalidIntStackPrt) != 0,
 				  CONFIG_ISTACK_SIZE,
-				  pi->stacks.interrupt.sp + CONFIG_ISTACK_SIZE / 2,
+				  pi->stacks.interrupt.sp + (CONFIG_ISTACK_SIZE / 2) * sizeof(stack_word_t),
 				  pi->stacks.interrupt.top,
 				  pi->stacks.interrupt.sp,
 				  pi->stacks.interrupt.top - pi->stacks.interrupt.size,
@@ -644,7 +687,7 @@ static int write_user_stack(int fdin, int fdout, info_s *pi, char *buffer,
 		lseek(fdin, offsetof(fullcontext_s, ustack), SEEK_SET);
 		ret = write_stack((pi->flags & eInvalidUserStackPtr) != 0,
 				  CONFIG_USTACK_SIZE,
-				  pi->stacks.user.sp + CONFIG_USTACK_SIZE / 2,
+				  pi->stacks.user.sp + (CONFIG_USTACK_SIZE / 2) * sizeof(stack_word_t),
 				  pi->stacks.user.top,
 				  pi->stacks.user.sp,
 				  pi->stacks.user.top - pi->stacks.user.size,
@@ -859,7 +902,7 @@ static int hardfault_commit(char *caller)
 {
 	int ret = -ENOENT;
 	int state = -1;
-	struct bbsramd_s desc;
+	dump_s desc;
 	char path[LOG_PATH_LEN + 1];
 	ret = hardfault_get_desc(caller, &desc, false);
 
@@ -889,7 +932,7 @@ static int hardfault_commit(char *caller)
 					if (fdout >= 0) {
 						identify(caller);
 						syslog(LOG_INFO, "Saving Fault Log file %s\n", path);
-						ret = hardfault_write(caller, fdout, HARDFAULT_FILE_FORMAT, true);
+						ret = hardfault_write(caller, fdout, HARDFAULT_FILE_FORMAT, false);
 						identify(caller);
 						hfsyslog(LOG_INFO, "Done saving Fault Log file\n");
 
@@ -916,6 +959,8 @@ static int hardfault_commit(char *caller)
 							}
 						}
 
+						ret = hardfault_rearm(caller);
+
 						close(fdout);
 					}
 				}
@@ -931,7 +976,7 @@ static int hardfault_commit(char *caller)
  * hardfault_dowrite
  ****************************************************************************/
 static int hardfault_dowrite(char *caller, int infd, int outfd,
-			     struct bbsramd_s *desc, int format)
+			     dump_s *desc, int format)
 {
 	int ret = -ENOMEM;
 	char *line = zalloc(OUT_BUFFER_LEN);
@@ -1034,6 +1079,10 @@ static int hardfault_dowrite(char *caller, int infd, int outfd,
  ****************************************************************************/
 __EXPORT int hardfault_rearm(char *caller)
 {
+#ifdef HAS_PROGMEM
+	// Clear flash sector to write new hardfault
+	hardfault_clear(caller, false);
+#endif
 	int ret = OK;
 	int rv = unlink(HARDFAULT_PATH);
 
@@ -1056,7 +1105,7 @@ __EXPORT int hardfault_rearm(char *caller)
 __EXPORT int hardfault_check_status(char *caller)
 {
 	int state = -1;
-	struct bbsramd_s desc;
+	dump_s desc;
 	int ret = hardfault_get_desc(caller, &desc, true);
 
 	if (ret < 0) {
@@ -1122,8 +1171,11 @@ __EXPORT int hardfault_increment_reboot(char *caller, bool reset)
 
 		if (!reset) {
 			if (read(fd, &count, sizeof(count)) !=  sizeof(count)) {
+				//Progmem could have an empty file hence we ignore this error
+#ifndef HAS_PROGMEM
 				ret = -EIO;
 				close(fd);
+#endif
 
 			} else {
 				lseek(fd, 0, SEEK_SET);
@@ -1155,7 +1207,7 @@ __EXPORT int hardfault_increment_reboot(char *caller, bool reset)
 
 __EXPORT int hardfault_write(char *caller, int fd, int format, bool rearm)
 {
-	struct bbsramd_s desc;
+	dump_s desc;
 
 	switch (format) {
 

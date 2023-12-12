@@ -63,10 +63,6 @@ Sensors::Sensors(bool hil_enabled) :
 	_parameter_handles.diff_pres_analog_scale = param_find("SENS_DPRES_ANSC");
 #endif /* ADC_AIRSPEED_VOLTAGE_CHANNEL */
 
-#if defined(CONFIG_SENSORS_VEHICLE_ANGULAR_VELOCITY)
-	_vehicle_angular_velocity.Start();
-#endif // CONFIG_SENSORS_VEHICLE_ANGULAR_VELOCITY
-
 	_parameter_handles.air_cmodel = param_find("CAL_AIR_CMODEL");
 	_parameter_handles.air_tube_length = param_find("CAL_AIR_TUBELEN");
 	_parameter_handles.air_tube_diameter_mm = param_find("CAL_AIR_TUBED_MM");
@@ -74,6 +70,10 @@ Sensors::Sensors(bool hil_enabled) :
 	_airspeed_validator.set_timeout(300000);
 	_airspeed_validator.set_equal_value_threshold(100);
 #endif // CONFIG_SENSORS_VEHICLE_AIRSPEED
+
+#if defined(CONFIG_SENSORS_VEHICLE_ANGULAR_VELOCITY)
+	_vehicle_angular_velocity.Start();
+#endif // CONFIG_SENSORS_VEHICLE_ANGULAR_VELOCITY
 
 	param_find("SYS_FAC_CAL_MODE");
 
@@ -771,14 +771,14 @@ The sensors module is central to the whole system. It takes low-level output fro
 it into a more usable form, and publishes it for the rest of the system.
 
 The provided functionality includes:
-- Read the output from the sensor drivers (`sensor_gyro`, etc.).
+- Read the output from the sensor drivers (`SensorGyro`, etc.).
   If there are multiple of the same type, do voting and failover handling.
   Then apply the board rotation and temperature calibration (if enabled). And finally publish the data; one of the
-  topics is `sensor_combined`, used by many parts of the system.
+  topics is `SensorCombined`, used by many parts of the system.
 - Make sure the sensor drivers get the updated calibration parameters (scale & offset) when the parameters change or
   on startup. The sensor drivers use the ioctl interface for parameter updates. For this to work properly, the
   sensor drivers must already be running when `sensors` is started.
-- Do sensor consistency checks and publish the `sensors_status_imu` topic.
+- Do sensor consistency checks and publish the `SensorsStatusImu` topic.
 
 ### Implementation
 It runs in its own thread and polls on the currently selected gyro topic.

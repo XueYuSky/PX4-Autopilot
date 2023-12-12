@@ -109,10 +109,10 @@ const struct clock_configuration_s g_initial_clkconfig = {
 		.spll          =
 		{
 			.mode        = SCG_SPLL_MONITOR_DISABLE,         /* SPLLCM */
-			.div1        = SCG_ASYNC_CLOCK_DIV_BY_1,         /* SPLLDIV1 */
-			.div2        = SCG_ASYNC_CLOCK_DIV_BY_2,         /* SPLLDIV2 */
+			.div1        = SCG_ASYNC_CLOCK_DIV_BY_2,         /* SPLLDIV1 160 / 2 = 80Mhz */
+			.div2        = SCG_ASYNC_CLOCK_DIV_BY_4,         /* SPLLDIV2 160 / 4 = 40Mhz */
 			.prediv      = 1,                                /* PREDIV */
-			.mult        = 40,                               /* MULT */
+			.mult        = 40,                               /* MULT 8 / 1 * 40 / 2 = 160Mhz */
 			.src         = 0,                                /* SOURCE */
 			.initialize  = true,                             /* Initialize */
 			.locked      = false,                            /* LK */
@@ -197,7 +197,6 @@ const struct clock_configuration_s g_initial_clkconfig = {
 	},
 	.pcc             =
 	{
-		.count         = NUM_OF_PERIPHERAL_CLOCKS_0,       /* Number peripheral clock configurations */
 		.pclks         = g_peripheral_clockconfig0,        /* Peripheral clock configurations */
 	},
 	.pmc             =

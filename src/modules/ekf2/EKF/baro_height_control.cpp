@@ -49,9 +49,14 @@ void Ekf::controlBaroHeightFusion()
 
 	baroSample baro_sample;
 
-	if (_baro_buffer && _baro_buffer->pop_first_older_than(_imu_sample_delayed.time_us, &baro_sample)) {
+	if (_baro_buffer && _baro_buffer->pop_first_older_than(_time_delayed_us, &baro_sample)) {
 
+#if defined(CONFIG_EKF2_BARO_COMPENSATION)
+		const float measurement = compensateBaroForDynamicPressure(baro_sample.hgt);
+#else
 		const float measurement = baro_sample.hgt;
+#endif
+
 		const float measurement_var = sq(_params.baro_noise);
 
 		const float innov_gate = fmaxf(_params.baro_innov_gate, 1.f);
@@ -59,17 +64,18 @@ void Ekf::controlBaroHeightFusion()
 		const bool measurement_valid = PX4_ISFINITE(measurement) && PX4_ISFINITE(measurement_var);
 
 		if (measurement_valid) {
-			if (_baro_counter == 0) {
-				_baro_lpf.reset(baro_sample.hgt);
+			if ((_baro_counter == 0) || baro_sample.reset) {
+				_baro_lpf.reset(measurement);
+				_baro_counter = 1;
 
 			} else {
-				_baro_lpf.update(baro_sample.hgt);
+				_baro_lpf.update(measurement);
+				_baro_counter++;
 			}
 
 			if (_baro_counter <= _obs_buffer_length) {
 				// Initialize the pressure offset (included in the baro bias)
 				bias_est.setBias(_state.pos(2) + _baro_lpf.getState());
-				_baro_counter++;
 			}
 		}
 
@@ -102,20 +108,19 @@ void Ekf::controlBaroHeightFusion()
 		if (measurement_valid) {
 			bias_est.setMaxStateNoise(sqrtf(measurement_var));
 			bias_est.setProcessNoiseSpectralDensity(_params.baro_bias_nsd);
-			bias_est.fuseBias(measurement - (-_state.pos(2)), measurement_var + P(9, 9));
+			bias_est.fuseBias(measurement - (-_state.pos(2)), measurement_var + P(State::pos.idx + 2, State::pos.idx + 2));
 		}
 
 		// determine if we should use height aiding
 		const bool continuing_conditions_passing = (_params.baro_ctrl == 1)
 				&& measurement_valid
+				&& (_baro_counter > _obs_buffer_length)
 				&& !_baro_hgt_faulty;
 
 		const bool starting_conditions_passing = continuing_conditions_passing
-				&& (_baro_counter > _obs_buffer_length)
 				&& isNewestSampleRecent(_time_last_baro_buffer_push, 2 * BARO_MAX_INTERVAL);
 
 		if (_control_status.flags.baro_hgt) {
-			aid_src.fusion_enabled = true;
 
 			if (continuing_conditions_passing) {
 
@@ -134,7 +139,7 @@ void Ekf::controlBaroHeightFusion()
 					// reset vertical velocity
 					resetVerticalVelocityToZero();
 
-					aid_src.time_last_fuse = _imu_sample_delayed.time_us;
+					aid_src.time_last_fuse = _time_delayed_us;
 
 				} else if (is_fusion_failing) {
 					// Some other height source is still working
@@ -150,7 +155,7 @@ void Ekf::controlBaroHeightFusion()
 
 		} else {
 			if (starting_conditions_passing) {
-				if (_params.height_sensor_ref == HeightSensor::BARO) {
+				if (_params.height_sensor_ref == static_cast<int32_t>(HeightSensor::BARO)) {
 					ECL_INFO("starting %s height fusion, resetting height", HGT_SRC_NAME);
 					_height_sensor_ref = HeightSensor::BARO;
 
@@ -163,7 +168,7 @@ void Ekf::controlBaroHeightFusion()
 					bias_est.setBias(_state.pos(2) + _baro_lpf.getState());
 				}
 
-				aid_src.time_last_fuse = _imu_sample_delayed.time_us;
+				aid_src.time_last_fuse = _time_delayed_us;
 				bias_est.setFusionActive();
 				_control_status.flags.baro_hgt = true;
 			}

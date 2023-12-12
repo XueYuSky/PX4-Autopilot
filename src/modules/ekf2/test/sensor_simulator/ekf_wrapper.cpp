@@ -12,7 +12,7 @@ EkfWrapper::~EkfWrapper()
 
 void EkfWrapper::setBaroHeightRef()
 {
-	_ekf_params->height_sensor_ref = HeightSensor::BARO;
+	_ekf_params->height_sensor_ref = static_cast<int32_t>(HeightSensor::BARO);
 }
 
 void EkfWrapper::enableBaroHeightFusion()
@@ -32,17 +32,17 @@ bool EkfWrapper::isIntendingBaroHeightFusion() const
 
 void EkfWrapper::setGpsHeightRef()
 {
-	_ekf_params->height_sensor_ref = HeightSensor::GNSS;
+	_ekf_params->height_sensor_ref = static_cast<int32_t>(HeightSensor::GNSS);
 }
 
 void EkfWrapper::enableGpsHeightFusion()
 {
-	_ekf_params->gnss_ctrl |= GnssCtrl::VPOS;
+	_ekf_params->gnss_ctrl |= static_cast<int32_t>(GnssCtrl::VPOS);
 }
 
 void EkfWrapper::disableGpsHeightFusion()
 {
-	_ekf_params->gnss_ctrl &= ~GnssCtrl::VPOS;
+	_ekf_params->gnss_ctrl &= ~static_cast<int32_t>(GnssCtrl::VPOS);
 }
 
 bool EkfWrapper::isIntendingGpsHeightFusion() const
@@ -52,17 +52,17 @@ bool EkfWrapper::isIntendingGpsHeightFusion() const
 
 void EkfWrapper::setRangeHeightRef()
 {
-	_ekf_params->height_sensor_ref = HeightSensor::RANGE;
+	_ekf_params->height_sensor_ref = static_cast<int32_t>(HeightSensor::RANGE);
 }
 
 void EkfWrapper::enableRangeHeightFusion()
 {
-	_ekf_params->rng_ctrl = RngCtrl::ENABLED;
+	_ekf_params->rng_ctrl = static_cast<int32_t>(RngCtrl::ENABLED);
 }
 
 void EkfWrapper::disableRangeHeightFusion()
 {
-	_ekf_params->rng_ctrl = RngCtrl::DISABLED;
+	_ekf_params->rng_ctrl = static_cast<int32_t>(RngCtrl::DISABLED);
 }
 
 bool EkfWrapper::isIntendingRangeHeightFusion() const
@@ -72,12 +72,12 @@ bool EkfWrapper::isIntendingRangeHeightFusion() const
 
 void EkfWrapper::setExternalVisionHeightRef()
 {
-	_ekf_params->height_sensor_ref = HeightSensor::EV;
+	_ekf_params->height_sensor_ref = static_cast<int32_t>(HeightSensor::EV);
 }
 
 void EkfWrapper::enableExternalVisionHeightFusion()
 {
-	setExternalVisionHeightRef(); // TODO: replace by EV control parameter
+	_ekf_params->ev_ctrl |= static_cast<int32_t>(EvCtrl::VPOS);
 }
 
 bool EkfWrapper::isIntendingExternalVisionHeightFusion() const
@@ -85,14 +85,29 @@ bool EkfWrapper::isIntendingExternalVisionHeightFusion() const
 	return _ekf->control_status_flags().ev_hgt;
 }
 
+void EkfWrapper::enableBetaFusion()
+{
+	_ekf_params->beta_fusion_enabled = true;
+}
+
+void EkfWrapper::disableBetaFusion()
+{
+	_ekf_params->beta_fusion_enabled = false;
+}
+
+bool EkfWrapper::isIntendingBetaFusion() const
+{
+	return _ekf->control_status_flags().fuse_beta;
+}
+
 void EkfWrapper::enableGpsFusion()
 {
-	_ekf_params->gnss_ctrl |= GnssCtrl::HPOS | GnssCtrl::VEL;
+	_ekf_params->gnss_ctrl |= static_cast<int32_t>(GnssCtrl::HPOS) | static_cast<int32_t>(GnssCtrl::VEL);
 }
 
 void EkfWrapper::disableGpsFusion()
 {
-	_ekf_params->gnss_ctrl &= ~(GnssCtrl::HPOS | GnssCtrl::VEL);
+	_ekf_params->gnss_ctrl &= ~(static_cast<int32_t>(GnssCtrl::HPOS) | static_cast<int32_t>(GnssCtrl::VEL));
 }
 
 bool EkfWrapper::isIntendingGpsFusion() const
@@ -102,12 +117,12 @@ bool EkfWrapper::isIntendingGpsFusion() const
 
 void EkfWrapper::enableGpsHeadingFusion()
 {
-	_ekf_params->gnss_ctrl |= GnssCtrl::YAW;
+	_ekf_params->gnss_ctrl |= static_cast<int32_t>(GnssCtrl::YAW);
 }
 
 void EkfWrapper::disableGpsHeadingFusion()
 {
-	_ekf_params->gnss_ctrl &= ~GnssCtrl::YAW;
+	_ekf_params->gnss_ctrl &= ~static_cast<int32_t>(GnssCtrl::YAW);
 }
 
 bool EkfWrapper::isIntendingGpsHeadingFusion() const
@@ -117,12 +132,12 @@ bool EkfWrapper::isIntendingGpsHeadingFusion() const
 
 void EkfWrapper::enableFlowFusion()
 {
-	_ekf_params->fusion_mode |= SensorFusionMask::USE_OPT_FLOW;
+	_ekf_params->flow_ctrl = 1;
 }
 
 void EkfWrapper::disableFlowFusion()
 {
-	_ekf_params->fusion_mode &= ~SensorFusionMask::USE_OPT_FLOW;
+	_ekf_params->flow_ctrl = 0;
 }
 
 bool EkfWrapper::isIntendingFlowFusion() const
@@ -137,12 +152,12 @@ void EkfWrapper::setFlowOffset(const Vector3f &offset)
 
 void EkfWrapper::enableExternalVisionPositionFusion()
 {
-	_ekf_params->fusion_mode |= SensorFusionMask::USE_EXT_VIS_POS;
+	_ekf_params->ev_ctrl |= static_cast<int32_t>(EvCtrl::HPOS);
 }
 
 void EkfWrapper::disableExternalVisionPositionFusion()
 {
-	_ekf_params->fusion_mode &= ~SensorFusionMask::USE_EXT_VIS_POS;
+	_ekf_params->ev_ctrl &= ~static_cast<int32_t>(EvCtrl::HPOS);
 }
 
 bool EkfWrapper::isIntendingExternalVisionPositionFusion() const
@@ -152,12 +167,12 @@ bool EkfWrapper::isIntendingExternalVisionPositionFusion() const
 
 void EkfWrapper::enableExternalVisionVelocityFusion()
 {
-	_ekf_params->fusion_mode |= SensorFusionMask::USE_EXT_VIS_VEL;
+	_ekf_params->ev_ctrl |= static_cast<int32_t>(EvCtrl::VEL);
 }
 
 void EkfWrapper::disableExternalVisionVelocityFusion()
 {
-	_ekf_params->fusion_mode &= ~SensorFusionMask::USE_EXT_VIS_VEL;
+	_ekf_params->ev_ctrl &= ~static_cast<int32_t>(EvCtrl::VEL);
 }
 
 bool EkfWrapper::isIntendingExternalVisionVelocityFusion() const
@@ -167,27 +182,17 @@ bool EkfWrapper::isIntendingExternalVisionVelocityFusion() const
 
 void EkfWrapper::enableExternalVisionHeadingFusion()
 {
-	_ekf_params->fusion_mode |= SensorFusionMask::USE_EXT_VIS_YAW;
+	_ekf_params->ev_ctrl |= static_cast<int32_t>(EvCtrl::YAW);
 }
 
 void EkfWrapper::disableExternalVisionHeadingFusion()
 {
-	_ekf_params->fusion_mode &= ~SensorFusionMask::USE_EXT_VIS_YAW;
+	_ekf_params->ev_ctrl &= ~static_cast<int32_t>(EvCtrl::YAW);
 }
 
 bool EkfWrapper::isIntendingExternalVisionHeadingFusion() const
 {
 	return _ekf->control_status_flags().ev_yaw;
-}
-
-void EkfWrapper::enableExternalVisionAlignment()
-{
-	_ekf_params->fusion_mode |= SensorFusionMask::ROTATE_EXT_VIS;
-}
-
-void EkfWrapper::disableExternalVisionAlignment()
-{
-	_ekf_params->fusion_mode &= ~SensorFusionMask::ROTATE_EXT_VIS;
 }
 
 bool EkfWrapper::isIntendingMagHeadingFusion() const
@@ -200,9 +205,29 @@ bool EkfWrapper::isIntendingMag3DFusion() const
 	return _ekf->control_status_flags().mag_3D;
 }
 
+bool EkfWrapper::isMagHeadingConsistent() const
+{
+	return _ekf->control_status_flags().mag_heading_consistent;
+}
+
 void EkfWrapper::setMagFuseTypeNone()
 {
 	_ekf_params->mag_fusion_type = MagFuseType::NONE;
+}
+
+void EkfWrapper::enableMagStrengthCheck()
+{
+	_ekf_params->mag_check |= static_cast<int32_t>(MagCheckMask::STRENGTH);
+}
+
+void EkfWrapper::enableMagInclinationCheck()
+{
+	_ekf_params->mag_check |= static_cast<int32_t>(MagCheckMask::INCLINATION);
+}
+
+void EkfWrapper::enableMagCheckForceWMM()
+{
+	_ekf_params->mag_check |= static_cast<int32_t>(MagCheckMask::FORCE_WMM);
 }
 
 bool EkfWrapper::isWindVelocityEstimated() const
@@ -255,11 +280,6 @@ float EkfWrapper::getYawAngle() const
 	return euler(2);
 }
 
-matrix::Vector<float, 4> EkfWrapper::getQuaternionVariance() const
-{
-	return matrix::Vector<float, 4>(_ekf->orientation_covariances().diag());
-}
-
 int EkfWrapper::getQuaternionResetCounter() const
 {
 	float tmp[4];
@@ -268,7 +288,24 @@ int EkfWrapper::getQuaternionResetCounter() const
 	return static_cast<int>(counter);
 }
 
-matrix::Vector3f EkfWrapper::getDeltaVelBiasVariance() const
+void EkfWrapper::enableDragFusion()
 {
-	return _ekf->covariances_diagonal().slice<3, 1>(13, 0);
+	_ekf_params->drag_ctrl = 1;
+}
+
+void EkfWrapper::disableDragFusion()
+{
+	_ekf_params->drag_ctrl = 0;
+}
+
+void EkfWrapper::setDragFusionParameters(const float &bcoef_x, const float &bcoef_y, const float &mcoef)
+{
+	_ekf_params->bcoef_x = bcoef_x;
+	_ekf_params->bcoef_y = bcoef_y;
+	_ekf_params->mcoef = mcoef;
+}
+
+float EkfWrapper::getMagHeadingNoise() const
+{
+	return _ekf_params->mag_heading_noise;
 }

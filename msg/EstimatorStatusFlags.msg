@@ -38,6 +38,11 @@ bool cs_wind_dead_reckoning     # 30 - true if we are navigationg reliant on win
 bool cs_rng_kin_consistent      # 31 - true when the range finder kinematic consistency check is passing
 bool cs_fake_pos                # 32 - true when fake position measurements are being fused
 bool cs_fake_hgt                # 33 - true when fake height measurements are being fused
+bool cs_gravity_vector          # 34 - true when gravity vector measurements are being fused
+bool cs_mag                     # 35 - true if 3-axis magnetometer measurement fusion (mag states only) is intended
+bool cs_ev_yaw_fault            # 36 - true when the EV heading has been declared faulty and is no longer being used
+bool cs_mag_heading_consistent  # 37 - true when the heading obtained from mag data is declared consistent with the filter
+bool cs_aux_gpos                # 38 - true if auxiliary global position measurement fusion is intended
 
 # fault status
 uint32 fault_status_changes   # number of filter fault status (fs) changes

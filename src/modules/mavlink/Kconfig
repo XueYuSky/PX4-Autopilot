@@ -7,9 +7,16 @@ menuconfig MODULES_MAVLINK
 menuconfig MAVLINK_DIALECT
 depends on MODULES_MAVLINK
         string "Mavlink dialect"
-        default "standard"
-    help
-        Select the Mavlink dialect to generate and use.
+        default "common"
+	---help---
+		Select the Mavlink dialect to generate and use.
+
+menuconfig MAVLINK_UAVCAN_PARAMETERS
+depends on MODULES_MAVLINK && DRIVERS_UAVCAN
+        bool "Mavlink UAVCAN parameter support"
+        default y
+	---help---
+		Expose UAVCAN parameters over Mavlink.
 
 menuconfig USER_MAVLINK
 	bool "mavlink running as userspace module"

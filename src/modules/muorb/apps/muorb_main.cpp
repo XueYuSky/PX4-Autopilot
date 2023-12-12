@@ -33,12 +33,11 @@
 
 #include <string.h>
 #include "uORBAppsProtobufChannel.hpp"
+#include "uORB/uORBManager.hpp"
 
-extern "C" { __EXPORT int muorb_main(int argc, char *argv[]); }
-
-static void usage()
-{
-	PX4_INFO("Usage: muorb 'start', 'test', 'stop', 'status'");
+extern "C" {
+	__EXPORT int muorb_main(int argc, char *argv[]);
+	__EXPORT int muorb_init();
 }
 
 static bool enable_debug = false;
@@ -46,41 +45,21 @@ static bool enable_debug = false;
 int
 muorb_main(int argc, char *argv[])
 {
-	if (argc < 2) {
-		usage();
-		return -EINVAL;
+	return muorb_init();
+}
+
+int
+muorb_init()
+{
+	uORB::AppsProtobufChannel *channel = uORB::AppsProtobufChannel::GetInstance();
+
+	PX4_INFO("Got muorb init command");
+
+	if (channel && channel->Initialize(enable_debug)) {
+		uORB::Manager::get_instance()->set_uorb_communicator(channel);
+
+		if (channel->Test()) { return OK; }
 	}
 
-	// TODO: Add an optional  start parameter to control debug messages
-	if (!strcmp(argv[1], "start")) {
-		// Register the protobuf channel with UORB.
-		uORB::AppsProtobufChannel *channel = uORB::AppsProtobufChannel::GetInstance();
-
-		if (channel && channel->Initialize(enable_debug)) { return OK; }
-
-	} else if (!strcmp(argv[1], "test")) {
-		uORB::AppsProtobufChannel *channel = uORB::AppsProtobufChannel::GetInstance();
-
-		if (channel && channel->Initialize(enable_debug) && channel->Test()) { return OK; }
-
-	} else if (!strcmp(argv[1], "stop")) {
-		if (uORB::AppsProtobufChannel::isInstance() == false) {
-			PX4_WARN("muorb not running");
-		}
-
-		return OK;
-
-	} else if (!strcmp(argv[1], "status")) {
-		if (uORB::AppsProtobufChannel::isInstance()) {
-			PX4_INFO("muorb initialized");
-
-		} else {
-			PX4_INFO("muorb not running");
-		}
-
-		return OK;
-	}
-
-	usage();
 	return -EINVAL;
 }

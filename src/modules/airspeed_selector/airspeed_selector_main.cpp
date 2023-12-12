@@ -128,7 +128,6 @@ private:
 	estimator_status_s _estimator_status {};
 	vehicle_acceleration_s _accel {};
 	vehicle_air_data_s _vehicle_air_data {};
-	vehicle_attitude_s _vehicle_attitude {};
 	vehicle_land_detected_s _vehicle_land_detected {};
 	vehicle_local_position_s _vehicle_local_position {};
 	vehicle_status_s _vehicle_status {};
@@ -142,6 +141,7 @@ private:
 	int32_t _prev_number_of_airspeed_sensors{0}; /**<  number of airspeed sensors in previous loop (to detect a new added sensor)*/
 	AirspeedValidator _airspeed_validator[MAX_NUM_AIRSPEED_SENSORS] {}; /**< airspeedValidator instances (one for each sensor) */
 
+	matrix::Quatf _q_att;
 	hrt_abstime _time_now_usec{0};
 	int _valid_airspeed_index{-2}; /**< index of currently chosen (valid) airspeed sensor */
 	int _prev_airspeed_index{-2}; /**< previously chosen airspeed sensor index */
@@ -162,8 +162,7 @@ private:
 		CHECK_TYPE_ONLY_DATA_MISSING_BIT = (1 << 0),
 		CHECK_TYPE_DATA_STUCK_BIT = (1 << 1),
 		CHECK_TYPE_INNOVATION_BIT = (1 << 2),
-		CHECK_TYPE_LOAD_FACTOR_BIT = (1 << 3),
-		CHECK_TYPE_DATA_VARIATION_BIT = (1 << 4)
+		CHECK_TYPE_LOAD_FACTOR_BIT = (1 << 3)
 	};
 
 	DEFINE_PARAMETERS(
@@ -351,10 +350,7 @@ AirspeedModule::Run()
 		input_data.lpos_valid = _vehicle_local_position_valid;
 		input_data.lpos_evh = _vehicle_local_position.evh;
 		input_data.lpos_evv = _vehicle_local_position.evv;
-		input_data.att_q[0] = _vehicle_attitude.q[0];
-		input_data.att_q[1] = _vehicle_attitude.q[1];
-		input_data.att_q[2] = _vehicle_attitude.q[2];
-		input_data.att_q[3] = _vehicle_attitude.q[3];
+		input_data.q_att = _q_att;
 		input_data.air_pressure_pa = _vehicle_air_data.baro_pressure_pa;
 		input_data.accel_z = _accel.xyz[2];
 		input_data.vel_test_ratio = _estimator_status.vel_test_ratio;
@@ -398,32 +394,32 @@ AirspeedModule::Run()
 
 			}
 
-			// save estimated airspeed scale after disarm
+			// save estimated airspeed scale after disarm if airspeed is valid and scale has changed
 			if (!armed && _armed_prev) {
-				if (_param_aspd_scale_apply.get() > 0) {
-					if (fabsf(_airspeed_validator[i].get_CAS_scale_validated() - _param_airspeed_scale[i]) > 0.01f) {
-						// apply the new scale if changed more than 0.01
-						mavlink_log_info(&_mavlink_log_pub, "Airspeed sensor Nr. %d ASPD_SCALE updated: %.2f --> %.2f", i + 1,
-								 (double)_param_airspeed_scale[i],
-								 (double)_airspeed_validator[i].get_CAS_scale_validated());
+				if (_param_aspd_scale_apply.get() > 0 && _airspeed_validator[i].get_airspeed_valid()
+				    && fabsf(_airspeed_validator[i].get_CAS_scale_validated() - _param_airspeed_scale[i]) > FLT_EPSILON) {
 
-						switch (i) {
-						case 0:
-							_param_airspeed_scale_1.set(_airspeed_validator[i].get_CAS_scale_validated());
-							_param_airspeed_scale_1.commit_no_notification();
-							break;
+					mavlink_log_info(&_mavlink_log_pub, "Airspeed sensor Nr. %d ASPD_SCALE updated: %.4f --> %.4f", i + 1,
+							 (double)_param_airspeed_scale[i],
+							 (double)_airspeed_validator[i].get_CAS_scale_validated());
 
-						case 1:
-							_param_airspeed_scale_2.set(_airspeed_validator[i].get_CAS_scale_validated());
-							_param_airspeed_scale_2.commit_no_notification();
-							break;
+					switch (i) {
+					case 0:
+						_param_airspeed_scale_1.set(_airspeed_validator[i].get_CAS_scale_validated());
+						_param_airspeed_scale_1.commit_no_notification();
+						break;
 
-						case 2:
-							_param_airspeed_scale_3.set(_airspeed_validator[i].get_CAS_scale_validated());
-							_param_airspeed_scale_3.commit_no_notification();
-							break;
-						}
+					case 1:
+						_param_airspeed_scale_2.set(_airspeed_validator[i].get_CAS_scale_validated());
+						_param_airspeed_scale_2.commit_no_notification();
+						break;
+
+					case 2:
+						_param_airspeed_scale_3.set(_airspeed_validator[i].get_CAS_scale_validated());
+						_param_airspeed_scale_3.commit_no_notification();
+						break;
 					}
+
 				}
 
 				_airspeed_validator[i].set_scale_init(_param_airspeed_scale[i]);
@@ -480,8 +476,6 @@ void AirspeedModule::update_params()
 				CheckTypeBits::CHECK_TYPE_INNOVATION_BIT);
 		_airspeed_validator[i].set_enable_load_factor_check(_param_airspeed_checks_on.get() &
 				CheckTypeBits::CHECK_TYPE_LOAD_FACTOR_BIT);
-		_airspeed_validator[i].set_enable_data_variation_check(_param_airspeed_checks_on.get() &
-				CheckTypeBits::CHECK_TYPE_DATA_VARIATION_BIT);
 	}
 }
 
@@ -501,13 +495,25 @@ void AirspeedModule::poll_topics()
 	_estimator_status_sub.update(&_estimator_status);
 	_vehicle_acceleration_sub.update(&_accel);
 	_vehicle_air_data_sub.update(&_vehicle_air_data);
-	_vehicle_attitude_sub.update(&_vehicle_attitude);
 	_vehicle_land_detected_sub.update(&_vehicle_land_detected);
 	_vehicle_status_sub.update(&_vehicle_status);
 	_vtol_vehicle_status_sub.update(&_vtol_vehicle_status);
 	_vehicle_local_position_sub.update(&_vehicle_local_position);
 	_position_setpoint_sub.update(&_position_setpoint);
 
+	if (_vehicle_attitude_sub.updated()) {
+		vehicle_attitude_s vehicle_attitude;
+		_vehicle_attitude_sub.update(&vehicle_attitude);
+
+		if (_vehicle_status.is_vtol_tailsitter && _vehicle_status.vehicle_type == vehicle_status_s::VEHICLE_TYPE_FIXED_WING) {
+
+			// if the vehicle is a tailsitter we have to rotate the attitude by 90° to get to the airspeed frame
+			_q_att = Quatf(vehicle_attitude.q) * Quatf(matrix::Eulerf(0.f, M_PI_2_F, 0.f));
+
+		} else {
+			_q_att = Quatf(vehicle_attitude.q);
+		}
+	}
 
 	_vehicle_local_position_valid = (_time_now_usec - _vehicle_local_position.timestamp < 1_s)
 					&& (_vehicle_local_position.timestamp > 0)
@@ -524,11 +530,9 @@ void AirspeedModule::update_wind_estimator_sideslip()
 	    && _vehicle_status.vehicle_type == vehicle_status_s::VEHICLE_TYPE_FIXED_WING
 	    && !_vehicle_land_detected.landed) {
 		Vector3f vI(_vehicle_local_position.vx, _vehicle_local_position.vy, _vehicle_local_position.vz);
-		Quatf q(_vehicle_attitude.q);
 
 		const float hor_vel_variance =  _vehicle_local_position.evh * _vehicle_local_position.evh;
-
-		_wind_estimator_sideslip.fuse_beta(_time_now_usec, vI, hor_vel_variance, q);
+		_wind_estimator_sideslip.fuse_beta(_time_now_usec, vI, hor_vel_variance, _q_att);
 	}
 
 	_wind_estimate_sideslip.timestamp = _time_now_usec;
@@ -556,8 +560,7 @@ void AirspeedModule::update_ground_minus_wind_airspeed()
 		const float TAS_east = _vehicle_local_position.vy - _wind_estimate_sideslip.windspeed_east;
 		const float TAS_down = _vehicle_local_position.vz; // no wind estimate in z
 		_ground_minus_wind_TAS = sqrtf(TAS_north * TAS_north + TAS_east * TAS_east + TAS_down * TAS_down);
-		_ground_minus_wind_CAS = calc_CAS_from_TAS(_ground_minus_wind_TAS, _vehicle_air_data.baro_pressure_pa,
-					 _vehicle_air_data.baro_temp_celcius);
+		_ground_minus_wind_CAS = calc_calibrated_from_true_airspeed(_ground_minus_wind_TAS, _vehicle_air_data.rho);
 
 	} else {
 		_ground_minus_wind_TAS = _ground_minus_wind_CAS = NAN;

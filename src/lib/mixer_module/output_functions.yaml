@@ -13,7 +13,7 @@ functions:
     Servo:
       start: 201
       count: 8
-    Offboard_Actuator_Set:
+    Peripheral_via_Actuator_Set:
       start: 301
       count: 6
 
@@ -35,6 +35,8 @@ functions:
     Gimbal_Yaw: 422
 
     Gripper: 430
+
+    Landing_Gear_Wheel: 440
 
     # Add your own here:
     #MyCustomFunction: 10000

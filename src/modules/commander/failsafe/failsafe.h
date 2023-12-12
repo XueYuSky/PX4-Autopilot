@@ -67,6 +67,80 @@ private:
 		ReturnOrLand = 3    // Return mode at critically low level, Land mode at current position if reaching dangerously low levels
 	};
 
+	enum class offboard_loss_failsafe_mode : int32_t {
+		Position_mode = 0,
+		Altitude_mode = 1,
+		Manual = 2,
+		Return_mode = 3,
+		Land_mode = 4,
+		Hold_mode = 5,
+		Terminate = 6,
+		Disarm = 7,
+	};
+
+	enum class position_control_navigation_loss_response : int32_t {
+		Altitude_Manual = 0,
+		Land_Descend = 1,
+	};
+
+	enum class actuator_failure_failsafe_mode : int32_t {
+		Warning_only = 0,
+		Hold_mode = 1,
+		Land_mode = 2,
+		Return_mode = 3,
+		Terminate = 4,
+	};
+
+	enum class imbalanced_propeller_failsafe_mode : int32_t {
+		Disabled = -1,
+		Warning = 0,
+		Return = 1,
+		Land = 2,
+	};
+
+	enum class geofence_violation_action : int32_t {
+		None = 0,
+		Warning = 1,
+		Hold_mode = 2,
+		Return_mode = 3,
+		Terminate = 4,
+		Land_mode = 5,
+	};
+
+	enum class gcs_connection_loss_failsafe_mode : int32_t {
+		Disabled = 0,
+		Hold_mode = 1,
+		Return_mode = 2,
+		Land_mode = 3,
+		Terminate = 5,
+		Disarm = 6,
+	};
+
+	enum class command_after_quadchute : int32_t {
+		Warning_only = -1,
+		Return_mode = 0,
+		Land_mode = 1,
+		Hold_mode = 2,
+	};
+
+	// COM_RC_IN_MODE parameter values
+	enum class RcInMode : int32_t {
+		RcTransmitterOnly = 0, 		// RC Transmitter only
+		JoystickOnly = 1,		// Joystick only
+		RcAndJoystickWithFallback = 2,	// RC And Joystick with fallback
+		RcOrJoystickKeepFirst = 3,	// RC or Joystick keep first
+		StickInputDisabled = 4		// input disabled
+	};
+
+	enum class command_after_high_wind_failsafe : int32_t {
+		None = 0,
+		Warning = 1,
+		Hold_mode = 2,
+		Return_mode = 3,
+		Terminate = 4,
+		Land_mode = 5
+	};
+
 	static ActionOptions fromNavDllOrRclActParam(int param_value);
 
 	static ActionOptions fromGfActParam(int param_value);
@@ -75,6 +149,7 @@ private:
 	static ActionOptions fromBatteryWarningActParam(int param_value, uint8_t battery_warning);
 	static ActionOptions fromQuadchuteActParam(int param_value);
 	static Action fromOffboardLossActParam(int param_value, uint8_t &user_intended_mode);
+	static ActionOptions fromHighWindLimitActParam(int param_value);
 
 	const int _caller_id_mode_fallback{genCallerId()};
 	bool _last_state_mode_fallback{false};
@@ -106,7 +181,8 @@ private:
 					(ParamInt<px4::params::COM_ACT_FAIL_ACT>) _param_com_actuator_failure_act,
 					(ParamInt<px4::params::COM_LOW_BAT_ACT>) _param_com_low_bat_act,
 					(ParamInt<px4::params::COM_OBL_RC_ACT>) _param_com_obl_rc_act,
-					(ParamInt<px4::params::COM_QC_ACT>) _param_com_qc_act
+					(ParamInt<px4::params::COM_QC_ACT>) _param_com_qc_act,
+					(ParamInt<px4::params::COM_WIND_MAX_ACT>) _param_com_wind_max_act
 				       );
 
 };

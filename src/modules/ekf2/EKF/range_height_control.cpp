@@ -42,12 +42,61 @@ void Ekf::controlRangeHeightFusion()
 {
 	static constexpr const char *HGT_SRC_NAME = "RNG";
 
+	bool rng_data_ready = false;
+
+	if (_range_buffer) {
+		// Get range data from buffer and check validity
+		rng_data_ready = _range_buffer->pop_first_older_than(_time_delayed_us, _range_sensor.getSampleAddress());
+		_range_sensor.setDataReadiness(rng_data_ready);
+
+		// update range sensor angle parameters in case they have changed
+		_range_sensor.setPitchOffset(_params.rng_sens_pitch);
+		_range_sensor.setCosMaxTilt(_params.range_cos_max_tilt);
+		_range_sensor.setQualityHysteresis(_params.range_valid_quality_s);
+
+		_range_sensor.runChecks(_time_delayed_us, _R_to_earth);
+
+		if (_range_sensor.isDataHealthy()) {
+			// correct the range data for position offset relative to the IMU
+			const Vector3f pos_offset_body = _params.rng_pos_body - _params.imu_pos_body;
+			const Vector3f pos_offset_earth = _R_to_earth * pos_offset_body;
+			_range_sensor.setRange(_range_sensor.getRange() + pos_offset_earth(2) / _range_sensor.getCosTilt());
+
+			if (_control_status.flags.in_air) {
+				const bool horizontal_motion = _control_status.flags.fixed_wing
+								|| (sq(_state.vel(0)) + sq(_state.vel(1)) > fmaxf(P.trace<2>(State::vel.idx), 0.1f));
+
+				const float dist_dependant_var = sq(_params.range_noise_scaler * _range_sensor.getDistBottom());
+				const float var = sq(_params.range_noise) + dist_dependant_var;
+
+				_rng_consistency_check.setGate(_params.range_kin_consistency_gate);
+				_rng_consistency_check.update(_range_sensor.getDistBottom(), math::max(var, 0.001f), _state.vel(2), P(State::vel.idx + 2, State::vel.idx + 2), horizontal_motion, _time_delayed_us);
+			}
+
+		} else {
+			// If we are supposed to be using range finder data as the primary height sensor, have bad range measurements
+			// and are on the ground, then synthesise a measurement at the expected on ground value
+			if (!_control_status.flags.in_air
+			    && _range_sensor.isRegularlySendingData()
+			    && _range_sensor.isDataReady()) {
+
+				_range_sensor.setRange(_params.rng_gnd_clearance);
+				_range_sensor.setValidity(true); // bypass the checks
+			}
+		}
+
+		_control_status.flags.rng_kin_consistent = _rng_consistency_check.isKinematicallyConsistent();
+
+	} else {
+		return;
+	}
+
 	auto &aid_src = _aid_src_rng_hgt;
 	HeightBiasEstimator &bias_est = _rng_hgt_b_est;
 
 	bias_est.predict(_dt_ekf_avg);
 
-	if (_rng_data_ready && _range_sensor.getSampleAddress()) {
+	if (rng_data_ready && _range_sensor.getSampleAddress()) {
 
 		const float measurement = math::max(_range_sensor.getDistBottom(), _params.rng_gnd_clearance);
 		const float measurement_var = sq(_params.range_noise) + sq(_params.range_noise_scaler * _range_sensor.getDistBottom());
@@ -68,12 +117,12 @@ void Ekf::controlRangeHeightFusion()
 		if (measurement_valid && _range_sensor.isDataHealthy()) {
 			bias_est.setMaxStateNoise(sqrtf(measurement_var));
 			bias_est.setProcessNoiseSpectralDensity(_params.rng_hgt_bias_nsd);
-			bias_est.fuseBias(measurement - (-_state.pos(2)), measurement_var + P(9, 9));
+			bias_est.fuseBias(measurement - (-_state.pos(2)), measurement_var + P(State::pos.idx + 2, State::pos.idx + 2));
 		}
 
 		// determine if we should use height aiding
-		const bool do_conditional_range_aid = (_params.rng_ctrl == RngCtrl::CONDITIONAL) && isConditionalRangeAidSuitable();
-		const bool continuing_conditions_passing = ((_params.rng_ctrl == RngCtrl::ENABLED) || do_conditional_range_aid)
+		const bool do_conditional_range_aid = (_params.rng_ctrl == static_cast<int32_t>(RngCtrl::CONDITIONAL)) && isConditionalRangeAidSuitable();
+		const bool continuing_conditions_passing = ((_params.rng_ctrl == static_cast<int32_t>(RngCtrl::ENABLED)) || do_conditional_range_aid)
 				&& measurement_valid
 				&& _range_sensor.isDataHealthy();
 
@@ -82,8 +131,6 @@ void Ekf::controlRangeHeightFusion()
 				&& _range_sensor.isRegularlySendingData();
 
 		if (_control_status.flags.rng_hgt) {
-			aid_src.fusion_enabled = true;
-
 			if (continuing_conditions_passing) {
 
 				fuseVerticalPosition(aid_src);
@@ -101,7 +148,7 @@ void Ekf::controlRangeHeightFusion()
 					// reset vertical velocity
 					resetVerticalVelocityToZero();
 
-					aid_src.time_last_fuse = _imu_sample_delayed.time_us;
+					aid_src.time_last_fuse = _time_delayed_us;
 
 				} else if (is_fusion_failing) {
 					// Some other height source is still working
@@ -118,13 +165,13 @@ void Ekf::controlRangeHeightFusion()
 
 		} else {
 			if (starting_conditions_passing) {
-				if ((_params.height_sensor_ref == HeightSensor::RANGE) && (_params.rng_ctrl == RngCtrl::CONDITIONAL)) {
+				if ((_params.height_sensor_ref == static_cast<int32_t>(HeightSensor::RANGE)) && (_params.rng_ctrl == static_cast<int32_t>(RngCtrl::CONDITIONAL))) {
 					// Range finder is used while hovering to stabilize the height estimate. Don't reset but use it as height reference.
 					ECL_INFO("starting conditional %s height fusion", HGT_SRC_NAME);
 					_height_sensor_ref = HeightSensor::RANGE;
 					bias_est.setBias(_state.pos(2) + measurement);
 
-				} else if ((_params.height_sensor_ref == HeightSensor::RANGE) && (_params.rng_ctrl != RngCtrl::CONDITIONAL)) {
+				} else if ((_params.height_sensor_ref == static_cast<int32_t>(HeightSensor::RANGE)) && (_params.rng_ctrl != static_cast<int32_t>(RngCtrl::CONDITIONAL))) {
 					// Range finder is the primary height source, the ground is now the datum used
 					// to compute the local vertical position
 					ECL_INFO("starting %s height fusion, resetting height", HGT_SRC_NAME);
@@ -139,7 +186,7 @@ void Ekf::controlRangeHeightFusion()
 					bias_est.setBias(_state.pos(2) + measurement);
 				}
 
-				aid_src.time_last_fuse = _imu_sample_delayed.time_us;
+				aid_src.time_last_fuse = _time_delayed_us;
 				bias_est.setFusionActive();
 				_control_status.flags.rng_hgt = true;
 			}
@@ -155,6 +202,7 @@ void Ekf::controlRangeHeightFusion()
 
 bool Ekf::isConditionalRangeAidSuitable()
 {
+#if defined(CONFIG_EKF2_TERRAIN)
 	if (_control_status.flags.in_air
 	    && _range_sensor.isHealthy()
 	    && isTerrainEstimateValid()) {
@@ -163,7 +211,10 @@ bool Ekf::isConditionalRangeAidSuitable()
 		float range_hagl_max = _params.max_hagl_for_range_aid;
 		float max_vel_xy = _params.max_vel_for_range_aid;
 
-		const float hagl_test_ratio = (_hagl_innov * _hagl_innov / (sq(_params.range_aid_innov_gate) * _hagl_innov_var));
+		const float hagl_innov = _aid_src_terrain_range_finder.innovation;
+		const float hagl_innov_var = _aid_src_terrain_range_finder.innovation_variance;
+
+		const float hagl_test_ratio = (hagl_innov * hagl_innov / (sq(_params.range_aid_innov_gate) * hagl_innov_var));
 
 		bool is_hagl_stable = (hagl_test_ratio < 1.f);
 
@@ -185,6 +236,7 @@ bool Ekf::isConditionalRangeAidSuitable()
 
 		return is_in_range && is_hagl_stable && is_below_max_speed;
 	}
+#endif // CONFIG_EKF2_TERRAIN
 
 	return false;
 }

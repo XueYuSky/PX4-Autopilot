@@ -247,7 +247,7 @@ ControlAllocator::update_effectiveness_source()
 			break;
 
 		case EffectivenessSource::MOTORS_6DOF: // just a different UI from MULTIROTOR
-			tmp = new ActuatorEffectivenessRotors(this);
+			tmp = new ActuatorEffectivenessUUV(this);
 			break;
 
 		case EffectivenessSource::MULTIROTOR_WITH_TILT:
@@ -258,8 +258,16 @@ ControlAllocator::update_effectiveness_source()
 			tmp = new ActuatorEffectivenessCustom(this);
 			break;
 
-		case EffectivenessSource::HELICOPTER:
-			tmp = new ActuatorEffectivenessHelicopter(this);
+		case EffectivenessSource::HELICOPTER_TAIL_ESC:
+			tmp = new ActuatorEffectivenessHelicopter(this, ActuatorType::MOTORS);
+			break;
+
+		case EffectivenessSource::HELICOPTER_TAIL_SERVO:
+			tmp = new ActuatorEffectivenessHelicopter(this, ActuatorType::SERVOS);
+			break;
+
+		case EffectivenessSource::HELICOPTER_COAXIAL:
+			tmp = new ActuatorEffectivenessHelicopterCoaxial(this);
 			break;
 
 		default:
@@ -355,6 +363,14 @@ ControlAllocator::Run()
 		}
 	}
 
+	{
+		vehicle_control_mode_s vehicle_control_mode;
+
+		if (_vehicle_control_mode_sub.update(&vehicle_control_mode)) {
+			_publish_controls = vehicle_control_mode.flag_control_allocation_enabled;
+		}
+	}
+
 	// Guard against too small (< 0.2ms) and too large (> 20ms) dt's.
 	const hrt_abstime now = hrt_absolute_time();
 	const float dt = math::constrain(((now - _last_run) / 1e6f), 0.0002f, 0.02f);
@@ -419,6 +435,7 @@ ControlAllocator::Run()
 
 			// Do allocation
 			_control_allocation[i]->allocate();
+			_actuator_effectiveness->allocateAuxilaryControls(dt, i, _control_allocation[i]->_actuator_sp); //flaps and spoilers
 			_actuator_effectiveness->updateSetpoint(c[i], i, _control_allocation[i]->_actuator_sp,
 								_control_allocation[i]->getActuatorMin(), _control_allocation[i]->getActuatorMax());
 
@@ -589,33 +606,29 @@ ControlAllocator::publish_control_allocator_status(int matrix_index)
 
 	// TODO: disabled motors (?)
 
-	if (!_actuator_effectiveness->getAllocatedAndUnallocatedControl(control_allocator_status)) {
-		// Allocated control
-		const matrix::Vector<float, NUM_AXES> &allocated_control = _control_allocation[matrix_index]->getAllocatedControl();
-		control_allocator_status.allocated_torque[0] = allocated_control(0);
-		control_allocator_status.allocated_torque[1] = allocated_control(1);
-		control_allocator_status.allocated_torque[2] = allocated_control(2);
-		control_allocator_status.allocated_thrust[0] = allocated_control(3);
-		control_allocator_status.allocated_thrust[1] = allocated_control(4);
-		control_allocator_status.allocated_thrust[2] = allocated_control(5);
+	// Allocated control
+	const matrix::Vector<float, NUM_AXES> &allocated_control = _control_allocation[matrix_index]->getAllocatedControl();
 
-		// Unallocated control
-		const matrix::Vector<float, NUM_AXES> unallocated_control = _control_allocation[matrix_index]->getControlSetpoint() -
-				allocated_control;
-		control_allocator_status.unallocated_torque[0] = unallocated_control(0);
-		control_allocator_status.unallocated_torque[1] = unallocated_control(1);
-		control_allocator_status.unallocated_torque[2] = unallocated_control(2);
-		control_allocator_status.unallocated_thrust[0] = unallocated_control(3);
-		control_allocator_status.unallocated_thrust[1] = unallocated_control(4);
-		control_allocator_status.unallocated_thrust[2] = unallocated_control(5);
+	// Unallocated control
+	const matrix::Vector<float, NUM_AXES> unallocated_control = _control_allocation[matrix_index]->getControlSetpoint() -
+			allocated_control;
+	control_allocator_status.unallocated_torque[0] = unallocated_control(0);
+	control_allocator_status.unallocated_torque[1] = unallocated_control(1);
+	control_allocator_status.unallocated_torque[2] = unallocated_control(2);
+	control_allocator_status.unallocated_thrust[0] = unallocated_control(3);
+	control_allocator_status.unallocated_thrust[1] = unallocated_control(4);
+	control_allocator_status.unallocated_thrust[2] = unallocated_control(5);
 
-		// Allocation success flags
-		control_allocator_status.torque_setpoint_achieved = (Vector3f(unallocated_control(0), unallocated_control(1),
-				unallocated_control(2)).norm_squared() < 1e-6f);
-		control_allocator_status.thrust_setpoint_achieved = (Vector3f(unallocated_control(3), unallocated_control(4),
-				unallocated_control(5)).norm_squared() < 1e-6f);
-	}
+	// override control_allocator_status in customized saturation logic for certain effectiveness types
+	_actuator_effectiveness->getUnallocatedControl(matrix_index, control_allocator_status);
 
+	// Allocation success flags
+	control_allocator_status.torque_setpoint_achieved = (Vector3f(control_allocator_status.unallocated_torque[0],
+			control_allocator_status.unallocated_torque[1],
+			control_allocator_status.unallocated_torque[2]).norm_squared() < 1e-6f);
+	control_allocator_status.thrust_setpoint_achieved = (Vector3f(control_allocator_status.unallocated_thrust[0],
+			control_allocator_status.unallocated_thrust[1],
+			control_allocator_status.unallocated_thrust[2]).norm_squared() < 1e-6f);
 
 	// Actuator saturation
 	const matrix::Vector<float, NUM_ACTUATORS> &actuator_sp = _control_allocation[matrix_index]->getActuatorSetpoint();
@@ -640,6 +653,10 @@ ControlAllocator::publish_control_allocator_status(int matrix_index)
 void
 ControlAllocator::publish_actuator_controls()
 {
+	if (!_publish_controls) {
+		return;
+	}
+
 	actuator_motors_s actuator_motors;
 	actuator_motors.timestamp = hrt_absolute_time();
 	actuator_motors.timestamp_sample = _timestamp_sample;
@@ -844,7 +861,7 @@ This implements control allocation. It takes torque and thrust setpoints
 as inputs and outputs actuator setpoint messages.
 )DESCR_STR");
 
-	PRINT_MODULE_USAGE_NAME(MODULE_NAME, "controller");
+	PRINT_MODULE_USAGE_NAME("control_allocator", "controller");
 	PRINT_MODULE_USAGE_COMMAND("start");
 	PRINT_MODULE_USAGE_DEFAULT_COMMANDS();
 

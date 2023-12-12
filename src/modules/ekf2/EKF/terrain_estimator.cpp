@@ -1,6 +1,6 @@
 /****************************************************************************
  *
- *   Copyright (c) 2015 Estimation and Control Library (ECL). All rights reserved.
+ *   Copyright (c) 2015-2023 PX4 Development Team. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -12,7 +12,7 @@
  *    notice, this list of conditions and the following disclaimer in
  *    the documentation and/or other materials provided with the
  *    distribution.
- * 3. Neither the name ECL nor the names of its contributors may be
+ * 3. Neither the name PX4 nor the names of its contributors may be
  *    used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -33,58 +33,81 @@
 
 /**
  * @file terrain_estimator.cpp
- * Function for fusing rangefinder measurements to estimate terrain vertical position/
- *
- * @author Paul Riseborough <p_riseborough@live.com.au>
- *
+ * Function for fusing rangefinder and optical flow measurements
+ * to estimate terrain vertical position
  */
 
 #include "ekf.h"
+#include "python/ekf_derivation/generated/terr_est_compute_flow_xy_innov_var_and_hx.h"
+#include "python/ekf_derivation/generated/terr_est_compute_flow_y_innov_var_and_h.h"
 
 #include <mathlib/mathlib.h>
 
 void Ekf::initHagl()
 {
-	resetHaglFake();
+	// assume a ground clearance
+	_terrain_vpos = _state.pos(2) + _params.rng_gnd_clearance;
+
+	// use the ground clearance value as our uncertainty
+	_terrain_var = sq(_params.rng_gnd_clearance);
+
+#if defined(CONFIG_EKF2_RANGE_FINDER)
+	_aid_src_terrain_range_finder.time_last_fuse = _time_delayed_us;
+#endif // CONFIG_EKF2_RANGE_FINDER
+
+#if defined(CONFIG_EKF2_OPTICAL_FLOW)
+	_aid_src_terrain_optical_flow.time_last_fuse = _time_delayed_us;
+#endif // CONFIG_EKF2_OPTICAL_FLOW
 }
 
-void Ekf::runTerrainEstimator()
+void Ekf::runTerrainEstimator(const imuSample &imu_delayed)
 {
 	// If we are on ground, store the local position and time to use as a reference
 	if (!_control_status.flags.in_air) {
 		_last_on_ground_posD = _state.pos(2);
 		_control_status.flags.rng_fault = false;
+
+	} else if (!_control_status_prev.flags.in_air) {
+		// Let the estimator run freely before arming for bench testing purposes, but reset on takeoff
+		// because when using optical flow measurements, it is safer to start with a small distance to ground
+		// as an overestimated distance leads to an overestimated velocity, causing a dangerous behavior.
+		initHagl();
 	}
 
-	predictHagl();
+	predictHagl(imu_delayed);
 
+#if defined(CONFIG_EKF2_RANGE_FINDER)
 	controlHaglRngFusion();
+#endif // CONFIG_EKF2_RANGE_FINDER
+
+#if defined(CONFIG_EKF2_OPTICAL_FLOW)
 	controlHaglFlowFusion();
+#endif // CONFIG_EKF2_OPTICAL_FLOW
+
 	controlHaglFakeFusion();
 
 	// constrain _terrain_vpos to be a minimum of _params.rng_gnd_clearance larger than _state.pos(2)
 	if (_terrain_vpos - _state.pos(2) < _params.rng_gnd_clearance) {
 		_terrain_vpos = _params.rng_gnd_clearance + _state.pos(2);
 	}
-
-	updateTerrainValidity();
 }
 
-void Ekf::predictHagl()
+void Ekf::predictHagl(const imuSample &imu_delayed)
 {
 	// predict the state variance growth where the state is the vertical position of the terrain underneath the vehicle
 
 	// process noise due to errors in vehicle height estimate
-	_terrain_var += sq(_imu_sample_delayed.delta_vel_dt * _params.terrain_p_noise);
+	_terrain_var += sq(imu_delayed.delta_vel_dt * _params.terrain_p_noise);
 
 	// process noise due to terrain gradient
-	_terrain_var += sq(_imu_sample_delayed.delta_vel_dt * _params.terrain_gradient)
+	_terrain_var += sq(imu_delayed.delta_vel_dt * _params.terrain_gradient)
 			* (sq(_state.vel(0)) + sq(_state.vel(1)));
 
 	// limit the variance to prevent it becoming badly conditioned
 	_terrain_var = math::constrain(_terrain_var, 0.0f, 1e4f);
 }
 
+#if defined(CONFIG_EKF2_RANGE_FINDER)
 void Ekf::controlHaglRngFusion()
 {
 	if (!(_params.terrain_fusion_mode & TerrainFusionMask::TerrainFuseRangeFinder)
@@ -94,20 +117,28 @@ void Ekf::controlHaglRngFusion()
 		return;
 	}
 
-	if (_range_sensor.isDataHealthy()) {
-		const bool continuing_conditions_passing = _control_status.flags.in_air && _rng_consistency_check.isKinematicallyConsistent();
-		//const bool continuing_conditions_passing = _control_status.flags.in_air && !_control_status.flags.rng_hgt; // TODO: should not be fused when using range height
-		const bool starting_conditions_passing = continuing_conditions_passing && _range_sensor.isRegularlySendingData() && (_rng_consistency_check.getTestRatio() < 1.f);
+	if (_range_sensor.isDataReady()) {
+		updateHaglRng(_aid_src_terrain_range_finder);
+	}
 
-		_time_last_healthy_rng_data = _imu_sample_delayed.time_us;
+	if (_range_sensor.isDataHealthy()) {
+
+		const bool continuing_conditions_passing = _rng_consistency_check.isKinematicallyConsistent();
+				//&& !_control_status.flags.rng_hgt // TODO: should not be fused when using range height
+
+		const bool starting_conditions_passing = continuing_conditions_passing
+				&& _range_sensor.isRegularlySendingData()
+				&& (_rng_consistency_check.getTestRatio() < 1.f);
+
+		_time_last_healthy_rng_data = _time_delayed_us;
 
 		if (_hagl_sensor_status.flags.range_finder) {
 			if (continuing_conditions_passing) {
-				fuseHaglRng();
+				fuseHaglRng(_aid_src_terrain_range_finder);
 
 				// We have been rejecting range data for too long
 				const uint64_t timeout = static_cast<uint64_t>(_params.terrain_timeout * 1e6f);
-				const bool is_fusion_failing = isTimedOut(_time_last_hagl_fuse, timeout);
+				const bool is_fusion_failing = isTimedOut(_aid_src_terrain_range_finder.time_last_fuse, timeout);
 
 				if (is_fusion_failing) {
 					if (_range_sensor.getDistBottom() > 2.f * _params.rng_gnd_clearance) {
@@ -133,7 +164,16 @@ void Ekf::controlHaglRngFusion()
 
 		} else {
 			if (starting_conditions_passing) {
-				startHaglRngFusion();
+				_hagl_sensor_status.flags.range_finder = true;
+
+				// Reset the state to the measurement only if the test ratio is large,
+				// otherwise let it converge through the fusion
+				if (_hagl_sensor_status.flags.flow && (_aid_src_terrain_range_finder.test_ratio < 0.2f)) {
+					fuseHaglRng(_aid_src_terrain_range_finder);
+
+				} else {
+					resetHaglRng();
+				}
 			}
 		}
 
@@ -143,42 +183,9 @@ void Ekf::controlHaglRngFusion()
 	}
 }
 
-void Ekf::startHaglRngFusion()
+float Ekf::getRngVar() const
 {
-	_hagl_sensor_status.flags.range_finder = true;
-	resetHaglRngIfNeeded();
-}
-
-void Ekf::resetHaglRngIfNeeded()
-{
-	if (_hagl_sensor_status.flags.flow) {
-		const float meas_hagl = _range_sensor.getDistBottom();
-		const float pred_hagl = _terrain_vpos - _state.pos(2);
-		const float hagl_innov = pred_hagl - meas_hagl;
-		const float obs_variance = getRngVar();
-
-		const float hagl_innov_var = fmaxf(_terrain_var + obs_variance, obs_variance);
-
-		const float gate_size = fmaxf(_params.range_innov_gate, 1.0f);
-		const float hagl_test_ratio = sq(hagl_innov) / (sq(gate_size) * hagl_innov_var);
-
-		// Reset the state to the measurement only if the test ratio is large,
-		// otherwise let it converge through the fusion
-		if (hagl_test_ratio > 0.2f) {
-			resetHaglRng();
-
-		} else {
-			fuseHaglRng();
-		}
-
-	} else {
-		resetHaglRng();
-	}
-}
-
-float Ekf::getRngVar()
-{
-	return fmaxf(P(9, 9) * _params.vehicle_variance_scaler, 0.0f)
+	return fmaxf(P(State::pos.idx + 2, State::pos.idx + 2) * _params.vehicle_variance_scaler, 0.0f)
 	       + sq(_params.range_noise)
 	       + sq(_params.range_noise_scaler * _range_sensor.getRange());
 }
@@ -188,23 +195,25 @@ void Ekf::resetHaglRng()
 	_terrain_vpos = _state.pos(2) + _range_sensor.getDistBottom();
 	_terrain_var = getRngVar();
 	_terrain_vpos_reset_counter++;
-	_time_last_hagl_fuse = _imu_sample_delayed.time_us;
+
+	_aid_src_terrain_range_finder.time_last_fuse = _time_delayed_us;
 }
 
 void Ekf::stopHaglRngFusion()
 {
 	if (_hagl_sensor_status.flags.range_finder) {
+		ECL_INFO("stopping HAGL range fusion");
 
-		_hagl_innov = 0.f;
-		_hagl_innov_var = 0.f;
-		_hagl_test_ratio = 0.f;
+		// reset flags
+		resetEstimatorAidStatus(_aid_src_terrain_range_finder);
+
 		_innov_check_fail_status.flags.reject_hagl = false;
 
 		_hagl_sensor_status.flags.range_finder = false;
 	}
 }
 
-void Ekf::fuseHaglRng()
+void Ekf::updateHaglRng(estimator_aid_source1d_s &aid_src) const
 {
 	// get a height above ground measurement from the range finder assuming a flat earth
 	const float meas_hagl = _range_sensor.getDistBottom();
@@ -213,34 +222,57 @@ void Ekf::fuseHaglRng()
 	const float pred_hagl = _terrain_vpos - _state.pos(2);
 
 	// calculate the innovation
-	_hagl_innov = pred_hagl - meas_hagl;
+	const float hagl_innov = pred_hagl - meas_hagl;
 
 	// calculate the observation variance adding the variance of the vehicles own height uncertainty
 	const float obs_variance = getRngVar();
 
 	// calculate the innovation variance - limiting it to prevent a badly conditioned fusion
-	_hagl_innov_var = fmaxf(_terrain_var + obs_variance, obs_variance);
+	const float hagl_innov_var = fmaxf(_terrain_var + obs_variance, obs_variance);
 
 	// perform an innovation consistency check and only fuse data if it passes
-	const float gate_size = fmaxf(_params.range_innov_gate, 1.0f);
-	_hagl_test_ratio = sq(_hagl_innov) / (sq(gate_size) * _hagl_innov_var);
+	const float innov_gate = fmaxf(_params.range_innov_gate, 1.0f);
 
-	if (_hagl_test_ratio <= 1.0f) {
+
+	aid_src.timestamp_sample = _time_delayed_us; // TODO
+
+	aid_src.observation = meas_hagl;
+	aid_src.observation_variance = obs_variance;
+
+	aid_src.innovation = hagl_innov;
+	aid_src.innovation_variance = hagl_innov_var;
+
+	setEstimatorAidStatusTestRatio(aid_src, innov_gate);
+
+	aid_src.fused = false;
+}
+
+void Ekf::fuseHaglRng(estimator_aid_source1d_s &aid_src)
+{
+	if (!aid_src.innovation_rejected) {
 		// calculate the Kalman gain
-		const float gain = _terrain_var / _hagl_innov_var;
+		const float gain = _terrain_var / aid_src.innovation_variance;
+
 		// correct the state
-		_terrain_vpos -= gain * _hagl_innov;
+		_terrain_vpos -= gain * aid_src.innovation;
+
 		// correct the variance
 		_terrain_var = fmaxf(_terrain_var * (1.0f - gain), 0.0f);
+
 		// record last successful fusion event
-		_time_last_hagl_fuse = _imu_sample_delayed.time_us;
 		_innov_check_fail_status.flags.reject_hagl = false;
+
+		aid_src.time_last_fuse = _time_delayed_us;
+		aid_src.fused = true;
 
 	} else {
 		_innov_check_fail_status.flags.reject_hagl = true;
+		aid_src.fused = false;
 	}
 }
+#endif // CONFIG_EKF2_RANGE_FINDER
 
+#if defined(CONFIG_EKF2_OPTICAL_FLOW)
 void Ekf::controlHaglFlowFusion()
 {
 	if (!(_params.terrain_fusion_mode & TerrainFusionMask::TerrainFuseOpticalFlow)) {
@@ -249,22 +281,23 @@ void Ekf::controlHaglFlowFusion()
 	}
 
 	if (_flow_data_ready) {
+		updateOptFlow(_aid_src_terrain_optical_flow);
+
 		const bool continuing_conditions_passing = _control_status.flags.in_air
-		                                           && !_control_status.flags.opt_flow
-							   && _control_status.flags.gps
-							   && isTimedOut(_time_last_hagl_fuse, 5e6f); // TODO: check for range_finder hagl aiding instead?
-							   /* && !_hagl_sensor_status.flags.range_finder; */
+				&& !_control_status.flags.opt_flow
+				&& _control_status.flags.gps
+				&& !_hagl_sensor_status.flags.range_finder;
+
 		const bool starting_conditions_passing = continuing_conditions_passing;
 
 		if (_hagl_sensor_status.flags.flow) {
 			if (continuing_conditions_passing) {
 
 				// TODO: wait until the midpoint of the flow sample has fallen behind the fusion time horizon
-				fuseFlowForTerrain();
-				_flow_data_ready = false;
+				fuseFlowForTerrain(_aid_src_terrain_optical_flow);
 
 				// TODO: do something when failing continuously the innovation check
-				/* const bool is_fusion_failing = isTimedOut(_time_last_flow_terrain_fuse, _params.reset_timeout_max); */
+				/* const bool is_fusion_failing = isTimedOut(_aid_src_optical_flow.time_last_fuse, _params.reset_timeout_max); */
 
 				/* if (is_fusion_failing) { */
 				/* 	resetHaglFlow(); */
@@ -276,161 +309,165 @@ void Ekf::controlHaglFlowFusion()
 
 		} else {
 			if (starting_conditions_passing) {
-				startHaglFlowFusion();
+				_hagl_sensor_status.flags.flow = true;
+				// TODO: do a reset instead of trying to fuse the data?
+				fuseFlowForTerrain(_aid_src_terrain_optical_flow);
 			}
 		}
 
-	} else if (_hagl_sensor_status.flags.flow
-		   && (_imu_sample_delayed.time_us > _flow_sample_delayed.time_us + (uint64_t)5e6)) {
+		_flow_data_ready = false;
+
+	} else if (_hagl_sensor_status.flags.flow && (_time_delayed_us > _flow_sample_delayed.time_us + (uint64_t)5e6)) {
 		// No data anymore. Stop until it comes back.
 		stopHaglFlowFusion();
 	}
 }
 
-void Ekf::startHaglFlowFusion()
-{
-	_hagl_sensor_status.flags.flow = true;
-	// TODO: do a reset instead of trying to fuse the data?
-	fuseFlowForTerrain();
-	_flow_data_ready = false;
-}
-
 void Ekf::stopHaglFlowFusion()
 {
 	if (_hagl_sensor_status.flags.flow) {
+		ECL_INFO("stopping HAGL flow fusion");
 
 		_hagl_sensor_status.flags.flow = false;
+		resetEstimatorAidStatus(_aid_src_terrain_optical_flow);
 	}
 }
 
 void Ekf::resetHaglFlow()
 {
 	// TODO: use the flow data
-	_terrain_vpos = fmaxf(0.0f,  _state.pos(2));
+	_terrain_vpos = fmaxf(0.0f, _state.pos(2));
 	_terrain_var = 100.0f;
 	_terrain_vpos_reset_counter++;
+
+	_aid_src_terrain_optical_flow.time_last_fuse = _time_delayed_us;
 }
 
-void Ekf::fuseFlowForTerrain()
+void Ekf::fuseFlowForTerrain(estimator_aid_source2d_s &flow)
 {
-	_aid_src_optical_flow.fusion_enabled = true;
+	flow.fused = true;
 
-	// calculate optical LOS rates using optical flow rates that have had the body angular rate contribution removed
-	// correct for gyro bias errors in the data used to do the motion compensation
-	// Note the sign convention used: A positive LOS rate is a RH rotation of the scene about that axis.
-	const Vector2f opt_flow_rate = _flow_compensated_XY_rad / _flow_sample_delayed.dt;
+	const float R_LOS = flow.observation_variance[0];
 
-	// get latest estimated orientation
-	const float q0 = _state.quat_nominal(0);
-	const float q1 = _state.quat_nominal(1);
-	const float q2 = _state.quat_nominal(2);
-	const float q3 = _state.quat_nominal(3);
+	// calculate the height above the ground of the optical flow camera. Since earth frame is NED
+	// a positive offset in earth frame leads to a smaller height above the ground.
+	float range = predictFlowRange();
 
-	// calculate the optical flow observation variance
-	const float R_LOS = calcOptFlowMeasVar(_flow_sample_delayed);
+	const float state = _terrain_vpos; // linearize both axes using the same state value
+	Vector2f innov_var;
+	float H;
+	sym::TerrEstComputeFlowXyInnovVarAndHx(state, _terrain_var, _state.quat_nominal, _state.vel, _state.pos(2), R_LOS, FLT_EPSILON, &innov_var, &H);
+	innov_var.copyTo(flow.innovation_variance);
 
-	// get rotation matrix from earth to body
-	const Dcmf earth_to_body = quatToInverseRotMat(_state.quat_nominal);
-
-	// calculate the sensor position relative to the IMU
-	const Vector3f pos_offset_body = _params.flow_pos_body - _params.imu_pos_body;
-
-	// calculate the velocity of the sensor relative to the imu in body frame
-	// Note: _flow_sample_delayed.gyro_xyz is the negative of the body angular velocity, thus use minus sign
-	const Vector3f vel_rel_imu_body = Vector3f(-_flow_sample_delayed.gyro_xyz / _flow_sample_delayed.dt) % pos_offset_body;
-
-	// calculate the velocity of the sensor in the earth frame
-	const Vector3f vel_rel_earth = _state.vel + _R_to_earth * vel_rel_imu_body;
-
-	// rotate into body frame
-	const Vector3f vel_body = earth_to_body * vel_rel_earth;
-
-	// constrain terrain to minimum allowed value and predict height above ground
-	_terrain_vpos = fmaxf(_terrain_vpos, _params.rng_gnd_clearance + _state.pos(2));
-	const float pred_hagl_inv = 1.f / (_terrain_vpos - _state.pos(2));
-
-	// calculate prediced optical flow
-	const float pred_flow_x =  vel_body(1) * earth_to_body(2, 2) * pred_hagl_inv;
-	const float pred_flow_y = -vel_body(0) * earth_to_body(2, 2) * pred_hagl_inv;
-
-	// calculate flow innovation
-	_aid_src_optical_flow.innovation[0] = pred_flow_x - opt_flow_rate(0);
-	_aid_src_optical_flow.innovation[1] = pred_flow_y - opt_flow_rate(1);
-
-	const float t0 = q0 * q0 - q1 * q1 - q2 * q2 + q3 * q3;
-
-	// Calculate observation matrix for flow around
-	const float Hx =  vel_body(1) * t0 * pred_hagl_inv * pred_hagl_inv;
-	const float Hy = -vel_body(0) * t0 * pred_hagl_inv * pred_hagl_inv;
-
-	// Constrain terrain variance to be non-negative
-	_terrain_var = fmaxf(_terrain_var, sq(0.01f));
-
-	// Cacluate innovation variance
-	_aid_src_optical_flow.innovation_variance[0] = Hx * Hx * _terrain_var + R_LOS;
-	_aid_src_optical_flow.innovation_variance[1] = Hy * Hy * _terrain_var + R_LOS;
-
-	// run the innovation consistency check and record result
-	setEstimatorAidStatusTestRatio(_aid_src_optical_flow, math::max(_params.flow_innov_gate, 1.f));
-
-	// do not perform measurement update if badly conditioned
-	if (_aid_src_optical_flow.innovation_rejected) {
+	if ((flow.innovation_variance[0] < R_LOS)
+	    || (flow.innovation_variance[1] < R_LOS)) {
+		// we need to reinitialise the covariance matrix and abort this fusion step
+		ECL_ERR("Opt flow error - covariance reset");
+		_terrain_var = 100.0f;
 		return;
 	}
 
-	// calculate the kalman gain for the flow measurement
-	const float Kx = _terrain_var * Hx / _aid_src_optical_flow.innovation_variance[0];
+	// run the innovation consistency check and record result
+	setEstimatorAidStatusTestRatio(flow, math::max(_params.flow_innov_gate, 1.f));
 
-	// calculate correction term for terrain variance
-	const float KxHxP =  Kx * Hx * _terrain_var;
+	_innov_check_fail_status.flags.reject_optflow_X = (flow.test_ratio[0] > 1.f);
+	_innov_check_fail_status.flags.reject_optflow_Y = (flow.test_ratio[1] > 1.f);
 
-	_terrain_vpos += Kx * _aid_src_optical_flow.innovation[0];
-	// guard against negative variance
-	_terrain_var = fmaxf(_terrain_var - KxHxP, sq(0.01f));
+	// if either axis fails we abort the fusion
+	if (flow.innovation_rejected) {
+		return;
+	}
 
+	// fuse observation axes sequentially
+	for (uint8_t index = 0; index <= 1; index++) {
+		if (index == 0) {
+			// everything was already computed above
 
-	// calculate the kalman gain for the flow measurement
-	const float Ky = _terrain_var * Hy / _aid_src_optical_flow.innovation_variance[1];
+		} else if (index == 1) {
+			// recalculate innovation variance because state covariances have changed due to previous fusion (linearise using the same initial state for all axes)
+			sym::TerrEstComputeFlowYInnovVarAndH(state, _terrain_var, _state.quat_nominal, _state.vel, _state.pos(2), R_LOS, FLT_EPSILON, &flow.innovation_variance[1], &H);
 
-	// calculate correction term for terrain variance
-	const float KyHyP =  Ky * Hy * _terrain_var;
+			// recalculate the innovation using the updated state
+			const Vector2f vel_body = predictFlowVelBody();
+			range = predictFlowRange();
+			flow.innovation[1] = (-vel_body(0) / range) - flow.observation[1];
 
-	_terrain_vpos += Ky * _aid_src_optical_flow.innovation_variance[1];
-	// guard against negative variance
-	_terrain_var = fmaxf(_terrain_var - KyHyP, sq(0.01f));
+			if (flow.innovation_variance[1] < R_LOS) {
+				// we need to reinitialise the covariance matrix and abort this fusion step
+				ECL_ERR("Opt flow error - covariance reset");
+				_terrain_var = 100.0f;
+				return;
+			}
+		}
 
+		float Kfusion = _terrain_var * H / flow.innovation_variance[index];
 
-	_time_last_flow_terrain_fuse = _imu_sample_delayed.time_us;
-	//_aid_src_optical_flow.time_last_fuse = _imu_sample_delayed.time_us; // TODO: separate aid source status for OF terrain?
-	_aid_src_optical_flow.fused = true;
+		_terrain_vpos += Kfusion * flow.innovation[0];
+		// constrain terrain to minimum allowed value and predict height above ground
+		_terrain_vpos = fmaxf(_terrain_vpos, _params.rng_gnd_clearance + _state.pos(2));
+
+		// guard against negative variance
+		_terrain_var = fmaxf(_terrain_var - Kfusion * H * _terrain_var, sq(0.01f));
+	}
+
+	_fault_status.flags.bad_optflow_X = false;
+	_fault_status.flags.bad_optflow_Y = false;
+
+	flow.time_last_fuse = _time_delayed_us;
+	flow.fused = true;
 }
+#endif // CONFIG_EKF2_OPTICAL_FLOW
 
 void Ekf::controlHaglFakeFusion()
 {
 	if (!_control_status.flags.in_air
 	    && !_hagl_sensor_status.flags.range_finder
 	    && !_hagl_sensor_status.flags.flow) {
-		resetHaglFake();
+
+		bool recent_terrain_aiding = false;
+
+#if defined(CONFIG_EKF2_RANGE_FINDER)
+		recent_terrain_aiding |= isRecent(_aid_src_terrain_range_finder.time_last_fuse, (uint64_t)1e6);
+#endif // CONFIG_EKF2_RANGE_FINDER
+
+#if defined(CONFIG_EKF2_OPTICAL_FLOW)
+		recent_terrain_aiding |= isRecent(_aid_src_terrain_optical_flow.time_last_fuse, (uint64_t)1e6);
+#endif // CONFIG_EKF2_OPTICAL_FLOW
+
+		if (_control_status.flags.vehicle_at_rest || !recent_terrain_aiding) {
+			initHagl();
+		}
 	}
 }
 
-void Ekf::resetHaglFake()
+bool Ekf::isTerrainEstimateValid() const
 {
-	// assume a ground clearance
-	_terrain_vpos = _state.pos(2) + _params.rng_gnd_clearance;
-	// use the ground clearance value as our uncertainty
-	_terrain_var = sq(_params.rng_gnd_clearance);
-	_time_last_hagl_fuse = _imu_sample_delayed.time_us;
-}
+	bool valid = false;
 
-void Ekf::updateTerrainValidity()
-{
+#if defined(CONFIG_EKF2_RANGE_FINDER)
+
 	// we have been fusing range finder measurements in the last 5 seconds
-	const bool recent_range_fusion = isRecent(_time_last_hagl_fuse, (uint64_t)5e6);
+	if (isRecent(_aid_src_terrain_range_finder.time_last_fuse, (uint64_t)5e6)) {
+		if (_hagl_sensor_status.flags.range_finder || !_control_status.flags.in_air) {
+			valid = true;
+		}
+	}
+
+#endif // CONFIG_EKF2_RANGE_FINDER
+
+#if defined(CONFIG_EKF2_OPTICAL_FLOW)
 
 	// we have been fusing optical flow measurements for terrain estimation within the last 5 seconds
 	// this can only be the case if the main filter does not fuse optical flow
-	const bool recent_flow_for_terrain_fusion = isRecent(_time_last_flow_terrain_fuse, (uint64_t)5e6);
+	if (_hagl_sensor_status.flags.flow && isRecent(_aid_src_terrain_optical_flow.time_last_fuse, (uint64_t)5e6)) {
+		valid = true;
+	}
 
-	_hagl_valid = (recent_range_fusion || recent_flow_for_terrain_fusion);
+#endif // CONFIG_EKF2_OPTICAL_FLOW
+
+	return valid;
+}
+
+void Ekf::terrainHandleVerticalPositionReset(const float delta_z) {
+	_terrain_vpos += delta_z;
 }

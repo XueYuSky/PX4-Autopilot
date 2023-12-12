@@ -46,6 +46,7 @@
  ****************************************************************************/
 
 #include "board_config.h"
+#include "spix_sync.h"
 
 #include <stdbool.h>
 #include <stdio.h>
@@ -105,9 +106,11 @@ __EXPORT void board_peripheral_reset(int ms)
 {
 	/* set the peripheral rails off */
 
+	VDD_5V_HIPOWER_EN(false);
 	VDD_5V_PERIPH_EN(false);
 	board_control_spi_sensors_power(false, 0xffff);
 	VDD_3V3_SENSORS4_EN(false);
+	SPI6_RESET(true);
 
 	bool last = READ_VDD_3V3_SPEKTRUM_POWER_EN();
 	/* Keep Spektum on to discharge rail*/
@@ -123,8 +126,11 @@ __EXPORT void board_peripheral_reset(int ms)
 	VDD_3V3_SPEKTRUM_POWER_EN(last);
 	board_control_spi_sensors_power(true, 0xffff);
 	VDD_3V3_SENSORS4_EN(true);
+	VDD_5V_HIPOWER_EN(true);
 	VDD_5V_PERIPH_EN(true);
 
+	/* Release SPI6 Reset */
+	SPI6_RESET(false);
 }
 
 /************************************************************************************
@@ -209,11 +215,12 @@ stm32_boardinitialize(void)
 __EXPORT int board_app_initialize(uintptr_t arg)
 {
 	/* Power on Interfaces */
-	VDD_3V3_SD_CARD_EN(true);
 	VDD_5V_PERIPH_EN(true);
 	VDD_5V_HIPOWER_EN(true);
 	VDD_3V3_SENSORS4_EN(true);
 	VDD_3V3_SPEKTRUM_POWER_EN(true);
+
+	SPI6_RESET(false);
 
 	/* Need hrt running before using the ADC */
 
@@ -277,6 +284,10 @@ __EXPORT int board_app_initialize(uintptr_t arg)
 	}
 
 #endif /* CONFIG_MMCSD */
+
+	/* Configure the SPIX_SYNC output */
+	spix_sync_servo_init(BOARD_SPIX_SYNC_FREQ);
+	spix_sync_servo_set(0, 150);
 
 	return OK;
 }

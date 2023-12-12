@@ -250,8 +250,8 @@
 #define GPIO_VDD_3V3_SD_CARD_EN         /* PC13 */ (GPIO_OUTPUT|GPIO_PUSHPULL|GPIO_SPEED_2MHz|GPIO_OUTPUT_CLEAR|GPIO_PORTC|GPIO_PIN13)
 
 /* MCP23009 GPIO expander */
-#define BOARD_GPIO_VDD_5V_COMP_VALID           "/dev/gpin4"
-#define BOARD_GPIO_VDD_5V_CAN1_GPS1_VALID      "/dev/gpin5"
+#define BOARD_GPIO_VDD_5V_COMP_VALID           "/dev/gpio4"
+#define BOARD_GPIO_VDD_5V_CAN1_GPS1_VALID      "/dev/gpio5"
 
 /* Spare GPIO */
 
@@ -352,11 +352,11 @@
 /* SD card bringup does not work if performed on the IDLE thread because it
  * will cause waiting.  Use either:
  *
- *  CONFIG_LIB_BOARDCTL=y, OR
+ *  CONFIG_BOARDCTL=y, OR
  *  CONFIG_BOARD_INITIALIZE=y && CONFIG_BOARD_INITTHREAD=y
  */
 
-#if defined(CONFIG_BOARD_INITIALIZE) && !defined(CONFIG_LIB_BOARDCTL) && \
+#if defined(CONFIG_BOARD_INITIALIZE) && !defined(CONFIG_BOARDCTL) && \
    !defined(CONFIG_BOARD_INITTHREAD)
 #  warning SDIO initialization cannot be perfomed on the IDLE thread
 #endif

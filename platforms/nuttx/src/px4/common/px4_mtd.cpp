@@ -1,6 +1,6 @@
 /****************************************************************************
  *
- *   Copyright (c) 2020, 2021 PX4 Development Team. All rights reserved.
+ *   Copyright (c) 2020-2021 PX4 Development Team. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -249,25 +249,19 @@ static const px4_mtd_manifest_t default_mtd_config = {
 
 #else
 
-const px4_mft_device_t spifram  = {             // FM25V02A on FMUM 32K 512 X 64
+const px4_mft_device_t spifram  = {             // FM25V02A on FMUM native: 32K X 8, emulated as (1024 Blocks of 32)
 	.bus_type = px4_mft_device_t::SPI,
 	.devid    = SPIDEV_FLASH(0)
 };
 
 const px4_mtd_entry_t fram = {
 	.device = &spifram,
-	.npart = 2,
+	.npart = 1,
 	.partd = {
 		{
 			.type = MTD_PARAMETERS,
 			.path = "/fs/mtd_params",
-			.nblocks = 32
-		},
-		{
-			.type = MTD_WAYPOINTS,
-			.path = "/fs/mtd_waypoints",
-			.nblocks = 32
-
+			.nblocks = (32768 / (1 << CONFIG_RAMTRON_EMULATE_SECTOR_SHIFT))
 		}
 	},
 };
@@ -308,7 +302,7 @@ int px4_mtd_config(const px4_mtd_manifest_t *mft_mtd)
 
 		instances[i] = new mtd_instance_s;
 
-		if (instances == nullptr) {
+		if (instances[i] == nullptr) {
 memoryout:
 			PX4_ERR("failed to allocate memory!");
 			return rv;
@@ -357,6 +351,11 @@ memoryout:
 
 		} else if (mtd_list->entries[num_entry]->device->bus_type == px4_mft_device_t::SPI) {
 			rv = ramtron_attach(*instances[i]);
+#if defined(HAS_FLEXSPI)
+
+		} else if (mtd_list->entries[num_entry]->device->bus_type == px4_mft_device_t::FLEXSPI) {
+			rv = flexspi_attach(instances[i]);
+#endif
 
 		} else if (mtd_list->entries[num_entry]->device->bus_type == px4_mft_device_t::ONCHIP) {
 			instances[i]->n_partitions_current++;
@@ -444,41 +443,39 @@ __EXPORT int px4_mtd_query(const char *sub, const char *val, const char **get)
 {
 	int rv = -ENODEV;
 
-	if (instances != nullptr) {
+	static const char *keys[] = PX4_MFT_MTD_STR_TYPES;
+	static const px4_mtd_types_t types[] = PX4_MFT_MTD_TYPES;
+	int key = 0;
 
-		static const char *keys[] = PX4_MFT_MTD_STR_TYPES;
-		static const px4_mtd_types_t types[] = PX4_MFT_MTD_TYPES;
-		int key = 0;
-
-		for (unsigned int k = 0; k < arraySize(keys); k++) {
-			if (!strcmp(keys[k], sub)) {
-				key = types[k];
-				break;
-			}
+	for (unsigned int k = 0; k < arraySize(keys); k++) {
+		if (!strcmp(keys[k], sub)) {
+			key = types[k];
+			break;
 		}
+	}
 
 
-		rv = -EINVAL;
+	rv = -EINVAL;
 
-		if (key != 0) {
-			rv = -ENOENT;
+	if (key != 0) {
+		rv = -ENOENT;
 
-			for (int i = 0; i < num_instances; i++) {
-				for (unsigned n = 0; n < instances[i]->n_partitions_current; n++) {
-					if (instances[i]->partition_types[n] == key) {
-						if (get != nullptr && val == nullptr) {
-							*get =  instances[i]->partition_names[n];
-							return 0;
-						}
+		for (int i = 0; i < num_instances; i++) {
+			for (unsigned n = 0; n < instances[i]->n_partitions_current; n++) {
+				if (instances[i]->partition_types[n] == key) {
+					if (get != nullptr && val == nullptr) {
+						*get =  instances[i]->partition_names[n];
+						return 0;
+					}
 
-						if (val != nullptr && strcmp(instances[i]->partition_names[n], val) == 0) {
-							return 0;
-						}
+					if (val != nullptr && strcmp(instances[i]->partition_names[n], val) == 0) {
+						return 0;
 					}
 				}
 			}
 		}
 	}
+
 
 	return rv;
 }

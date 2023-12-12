@@ -1,6 +1,6 @@
 /****************************************************************************
  *
- *   Copyright (c) 2020-2021 PX4 Development Team. All rights reserved.
+ *   Copyright (c) 2020-2022 PX4 Development Team. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -47,7 +47,8 @@
  * @author Mathieu Bresciani 	<mathieu@auterion.com>
  */
 
-#pragma once
+#ifndef EKF_BIAS_ESTIMATOR_HPP
+#define EKF_BIAS_ESTIMATOR_HPP
 
 #include <matrix/math.hpp>
 #include <mathlib/mathlib.h>
@@ -57,14 +58,16 @@ class BiasEstimator
 {
 public:
 	struct status {
-		float bias;
-		float bias_var;
-		float innov;
-		float innov_var;
-		float innov_test_ratio;
+		float bias{0.f};
+		float bias_var{0.f};
+		float innov{0.f};
+		float innov_var{0.f};
+		float innov_test_ratio{INFINITY};
 	};
 
+	BiasEstimator() {}
 	BiasEstimator(float state_init, float state_var_init): _state{state_init}, _state_var{state_var_init} {};
+
 	virtual ~BiasEstimator() = default;
 
 	void reset()
@@ -107,7 +110,7 @@ private:
 	float _time_since_last_negative_innov{0.f};
 	float _time_since_last_positive_innov{0.f};
 
-	status _status;
+	status _status{};
 
 	void constrainStateVar();
 	float computeKalmanGain(float innov_var) const;
@@ -131,3 +134,5 @@ private:
 	static constexpr float _innov_sequence_monitnoring_time_constant{10.f}; ///< in seconds
 	static constexpr float _process_var_boost_gain{1.0e3f};
 };
+
+#endif // !EKF_BIAS_ESTIMATOR_HPP

@@ -61,7 +61,6 @@
 #include <uORB/PublicationMulti.hpp>
 #include <uORB/SubscriptionInterval.hpp>
 #include <uORB/topics/actuator_armed.h>
-#include <uORB/topics/actuator_controls.h>
 #include <uORB/topics/actuator_outputs.h>
 #include <uORB/topics/airspeed.h>
 #include <uORB/topics/autotune_attitude_control_status.h>
@@ -111,6 +110,7 @@
 #include <uORB/topics/vehicle_status.h>
 #include <uORB/topics/vehicle_trajectory_bezier.h>
 #include <uORB/topics/vehicle_trajectory_waypoint.h>
+#include <uORB/topics/velocity_limits.h>
 
 #if !defined(CONSTRAINED_FLASH)
 # include <uORB/topics/debug_array.h>
@@ -188,7 +188,6 @@ private:
 	void handle_message_rc_channels(mavlink_message_t *msg);
 	void handle_message_rc_channels_override(mavlink_message_t *msg);
 	void handle_message_serial_control(mavlink_message_t *msg);
-	void handle_message_set_actuator_control_target(mavlink_message_t *msg);
 	void handle_message_set_attitude_target(mavlink_message_t *msg);
 	void handle_message_set_mode(mavlink_message_t *msg);
 	void handle_message_set_position_target_global_int(mavlink_message_t *msg);
@@ -198,6 +197,9 @@ private:
 	void handle_message_trajectory_representation_bezier(mavlink_message_t *msg);
 	void handle_message_trajectory_representation_waypoints(mavlink_message_t *msg);
 	void handle_message_utm_global_position(mavlink_message_t *msg);
+#if defined(MAVLINK_MSG_ID_SET_VELOCITY_LIMITS) // For now only defined if development.xml is used
+	void handle_message_set_velocity_limits(mavlink_message_t *msg);
+#endif
 	void handle_message_vision_position_estimate(mavlink_message_t *msg);
 	void handle_message_gimbal_manager_set_attitude(mavlink_message_t *msg);
 	void handle_message_gimbal_manager_set_manual_control(mavlink_message_t *msg);
@@ -289,7 +291,6 @@ private:
 	uint16_t _mavlink_status_last_packet_rx_drop_count{0};
 
 	// ORB publications
-	uORB::Publication<actuator_controls_s>			_actuator_controls_pubs[3] {ORB_ID(actuator_controls_0), ORB_ID(actuator_controls_1), ORB_ID(actuator_controls_2)};
 	uORB::Publication<airspeed_s>				_airspeed_pub{ORB_ID(airspeed)};
 	uORB::Publication<battery_status_s>			_battery_pub{ORB_ID(battery_status)};
 	uORB::Publication<camera_status_s>			_camera_status_pub{ORB_ID(camera_status)};
@@ -308,6 +309,7 @@ private:
 	uORB::Publication<obstacle_distance_s>			_obstacle_distance_pub{ORB_ID(obstacle_distance)};
 	uORB::Publication<offboard_control_mode_s>		_offboard_control_mode_pub{ORB_ID(offboard_control_mode)};
 	uORB::Publication<onboard_computer_status_s>		_onboard_computer_status_pub{ORB_ID(onboard_computer_status)};
+	uORB::Publication<velocity_limits_s>			_velocity_limits_pub{ORB_ID(velocity_limits)};
 	uORB::Publication<generator_status_s>			_generator_status_pub{ORB_ID(generator_status)};
 	uORB::Publication<vehicle_attitude_s>			_attitude_pub{ORB_ID(vehicle_attitude)};
 	uORB::Publication<vehicle_attitude_setpoint_s>		_att_sp_pub{ORB_ID(vehicle_attitude_setpoint)};
@@ -338,7 +340,7 @@ private:
 	uORB::PublicationMulti<radio_status_s>			_radio_status_pub{ORB_ID(radio_status)};
 	uORB::PublicationMulti<sensor_baro_s>			_sensor_baro_pub{ORB_ID(sensor_baro)};
 	uORB::PublicationMulti<sensor_gps_s>			_sensor_gps_pub{ORB_ID(sensor_gps)};
-	uORB::PublicationMulti<sensor_optical_flow_s>         _sensor_optical_flow_pub{ORB_ID(sensor_optical_flow)};
+	uORB::PublicationMulti<sensor_optical_flow_s>           _sensor_optical_flow_pub{ORB_ID(sensor_optical_flow)};
 
 	// ORB publications (queue length > 1)
 	uORB::Publication<transponder_report_s>  _transponder_report_pub{ORB_ID(transponder_report)};

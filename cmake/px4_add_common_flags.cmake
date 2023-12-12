@@ -144,7 +144,6 @@ function(px4_add_common_flags)
 	list(APPEND c_flags
 		-fno-common
 
-		-Wbad-function-cast
 		-Wnested-externs
 		-Wstrict-prototypes
 	)
@@ -156,9 +155,6 @@ function(px4_add_common_flags)
 	# CXX only flags
 	set(cxx_flags)
 	list(APPEND cxx_flags
-		-fno-exceptions
-		-fno-threadsafe-statics
-
 		-Wreorder
 
 		# disabled warnings

@@ -65,6 +65,8 @@ int TAP_ESC::init()
 		return ret;
 	}
 
+	_esc_feedback_pub.advertise();
+
 	/* Respect boot time required by the ESC FW */
 	hrt_abstime uptime_us = hrt_absolute_time();
 
@@ -404,7 +406,7 @@ void TAP_ESC::Run()
 	}
 
 	// check at end of cycle (updateSubscriptions() can potentially change to a different WorkQueue thread)
-	_mixing_output.updateSubscriptions(true, true);
+	_mixing_output.updateSubscriptions(true);
 
 	perf_end(_cycle_perf);
 }

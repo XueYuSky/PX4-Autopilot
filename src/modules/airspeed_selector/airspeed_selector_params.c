@@ -1,6 +1,6 @@
 
 /**
- * Airspeed Selector: Wind estimator wind process noise noise spectral density
+ * Wind estimator wind process noise spectral density
  *
  * Wind process noise of the internal wind estimator(s) of the airspeed selector.
  * When unaided, the wind estimate uncertainty (1-sigma, in m/s) increases by this amount every second.
@@ -11,10 +11,10 @@
  * @decimal 2
  * @group Airspeed Validator
  */
-PARAM_DEFINE_FLOAT(ASPD_WIND_NSD, 1.e-2f);
+PARAM_DEFINE_FLOAT(ASPD_WIND_NSD, 1.e-1f);
 
 /**
- * Airspeed Selector: Wind estimator true airspeed scale process noise spectral density
+ * Wind estimator true airspeed scale process noise spectral density
  *
  * Airspeed scale process noise of the internal wind estimator(s) of the airspeed selector.
  * When unaided, the scale uncertainty (1-sigma, unitless) increases by this amount every second.
@@ -25,10 +25,10 @@ PARAM_DEFINE_FLOAT(ASPD_WIND_NSD, 1.e-2f);
  * @decimal 5
  * @group Airspeed Validator
  */
-PARAM_DEFINE_FLOAT(ASPD_SCALE_NSD, 0.0001f);
+PARAM_DEFINE_FLOAT(ASPD_SCALE_NSD, 1.e-4f);
 
 /**
- * Airspeed Selector: Wind estimator true airspeed measurement noise
+ * Wind estimator true airspeed measurement noise
  *
  * True airspeed measurement noise of the internal wind estimator(s) of the airspeed selector.
  *
@@ -41,7 +41,7 @@ PARAM_DEFINE_FLOAT(ASPD_SCALE_NSD, 0.0001f);
 PARAM_DEFINE_FLOAT(ASPD_TAS_NOISE, 1.4f);
 
 /**
- * Airspeed Selector: Wind estimator sideslip measurement noise
+ * Wind estimator sideslip measurement noise
  *
  * Sideslip measurement noise of the internal wind estimator(s) of the airspeed selector.
  *
@@ -51,10 +51,10 @@ PARAM_DEFINE_FLOAT(ASPD_TAS_NOISE, 1.4f);
  * @decimal 3
  * @group Airspeed Validator
  */
-PARAM_DEFINE_FLOAT(ASPD_BETA_NOISE, 0.3f);
+PARAM_DEFINE_FLOAT(ASPD_BETA_NOISE, 0.15f);
 
 /**
- * Airspeed Selector: Gate size for true airspeed fusion
+ * Gate size for true airspeed fusion
  *
  * Sets the number of standard deviations used by the innovation consistency test.
  *
@@ -63,10 +63,10 @@ PARAM_DEFINE_FLOAT(ASPD_BETA_NOISE, 0.3f);
  * @unit SD
  * @group Airspeed Validator
  */
-PARAM_DEFINE_INT32(ASPD_TAS_GATE, 3);
+PARAM_DEFINE_INT32(ASPD_TAS_GATE, 4);
 
 /**
- * Airspeed Selector: Gate size for sideslip angle fusion
+ * Gate size for sideslip angle fusion
  *
  * Sets the number of standard deviations used by the innovation consistency test.
  *
@@ -148,18 +148,16 @@ PARAM_DEFINE_INT32(ASPD_PRIMARY, 1);
  * Enable checks on airspeed sensors
  *
  * Controls which checks are run to check airspeed data for validity. Only applied if ASPD_PRIMARY > 0.
- * Note that the data missing check is enabled if any of the options is set.
  *
  * @min 0
- * @max 31
+ * @max 15
  * @bit 0 Only data missing check (triggers if more than 1s no data)
  * @bit 1 Data stuck (triggers if data is exactly constant for 2s in FW mode)
  * @bit 2 Innovation check (see ASPD_FS_INNOV)
  * @bit 3 Load factor check (triggers if measurement is below stall speed)
- * @bit 4 Check for data variation in first 10s after sensor connection
  * @group Airspeed Validator
  */
-PARAM_DEFINE_INT32(ASPD_DO_CHECKS, 23);
+PARAM_DEFINE_INT32(ASPD_DO_CHECKS, 7);
 
 /**
  * Enable fallback to sensor-less airspeed estimation
@@ -233,7 +231,7 @@ PARAM_DEFINE_INT32(ASPD_FS_T_START, -1);
  * Horizontal wind uncertainty threshold for synthetic airspeed.
  *
  * The synthetic airspeed estimate (from groundspeed and heading) will be declared valid
- * as soon and as long the horizontal wind uncertainty drops below this value.
+ * as soon and as long the horizontal wind uncertainty is below this value.
  *
  * @unit m/s
  * @min 0.001

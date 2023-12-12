@@ -546,6 +546,7 @@ void Sih::publish_ground_truth(const hrt_abstime &time_now_us)
 
 		local_position.heading = Eulerf(_q).psi();
 		local_position.heading_good_for_control = true;
+		local_position.unaided_heading = NAN;
 
 		local_position.timestamp = hrt_absolute_time();
 		_local_position_ground_truth_pub.publish(local_position);
@@ -645,7 +646,7 @@ int Sih::task_spawn(int argc, char *argv[])
 	_task_id = px4_task_spawn_cmd("sih",
 				      SCHED_DEFAULT,
 				      SCHED_PRIORITY_MAX,
-				      1250,
+				      1560,
 				      (px4_main_t)&run_trampoline,
 				      (char *const *)argv);
 
@@ -682,11 +683,11 @@ int Sih::print_usage(const char *reason)
 	PRINT_MODULE_DESCRIPTION(
 		R"DESCR_STR(
 ### Description
-This module provide a simulator for quadrotors and fixed-wings running fully
+This module provides a simulator for quadrotors and fixed-wings running fully
 inside the hardware autopilot.
 
 This simulator subscribes to "actuator_outputs" which are the actuator pwm
-signals given by the mixer.
+signals given by the control allocation module.
 
 This simulator publishes the sensors signals corrupted with realistic noise
 in order to incorporate the state estimator in the loop.

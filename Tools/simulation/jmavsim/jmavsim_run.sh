@@ -2,7 +2,8 @@
 
 set -e
 
-SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+SCRIPT_DIR=$(dirname $(readlink -f "$BASH_SOURCE"))
+
 cd "$SCRIPT_DIR/jMAVSim"
 
 port=4560
@@ -11,7 +12,7 @@ baudrate=921600
 device=
 ip="127.0.0.1"
 protocol="tcp"
-while getopts ":b:d:u:p:qsr:f:i:loat" opt; do
+while getopts "b:d:ui:p:qsr:loat" opt; do
 	case $opt in
 		b)
 			baudrate=$OPTARG
@@ -73,4 +74,5 @@ fi
 ant create_run_jar copy_res
 cd out/production
 
-java -XX:GCTimeRatio=20 -Djava.ext.dirs= -jar jmavsim_run.jar $device $extra_args
+java --add-exports java.base/java.lang=ALL-UNNAMED --add-exports java.desktop/sun.awt=ALL-UNNAMED --add-exports java.desktop/sun.java2d=ALL-UNNAMED \
+	-XX:GCTimeRatio=20 -Djava.ext.dirs= -jar jmavsim_run.jar $device $extra_args

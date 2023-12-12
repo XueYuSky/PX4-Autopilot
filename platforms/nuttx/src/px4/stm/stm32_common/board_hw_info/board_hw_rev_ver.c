@@ -48,8 +48,8 @@
 #include <fcntl.h>
 #include <board_config.h>
 
-#include <systemlib/crc.h>
-#include <systemlib/px4_macros.h>
+#include <lib/crc/crc.h>
+#include <lib/systemlib/px4_macros.h>
 
 #if defined(BOARD_HAS_HW_VERSIONING)
 
@@ -70,19 +70,6 @@ static char hw_info[HW_INFO_SIZE] = {0};
 
 /****************************************************************************
  * Protected Functions
- ****************************************************************************/
-/****************************************************************************
-  * Name: determin_hw_version
- *
- * Description:
- *
- * This function fist determines if revision  and version resistors are in place.
- * if they it will read the ADC channels and decode the DN to ordinal numbers
- * that will be returned by board_get_hw_version and board_get_hw_revision API
- *
- *  This will return OK on success and -1 on not supported
-*
- *
  ****************************************************************************/
 
 static int dn_to_ordinal(uint16_t dn)
@@ -445,22 +432,36 @@ __EXPORT int board_get_hw_revision()
 
 int board_determine_hw_info()
 {
-	// MFT supported?
-	const char *path;
-	int rvmft = px4_mtd_query("MTD_MFT", NULL, &path);
 
 	// Read ADC jumpering hw_info
 	int rv = determine_hw_info(&hw_revision, &hw_version);
 
 	if (rv == OK) {
 
-		if (rvmft == OK && path != NULL && hw_version == HW_VERSION_EEPROM) {
+		// MFT supported?
+		const char *path;
+		int rvmft = px4_mtd_query("MTD_MFT_VER", NULL, &path);
+
+		if (rvmft == OK && path != NULL && hw_version == HW_ID_EEPROM) {
 
 			mtd_mft_v0_t mtd_mft = {MTD_MFT_v0};
 			rv = board_get_eeprom_hw_info(path, (mtd_mft_t *)&mtd_mft);
 
 			if (rv == OK) {
-				hw_version = mtd_mft.hw_extended_ver;
+				hw_version = mtd_mft.hw_extended_id;
+			}
+		}
+
+		path = NULL;
+		rvmft = px4_mtd_query("MTD_MFT_REV", NULL, &path);
+
+		if (rv == OK && rvmft == OK && path != NULL && hw_revision == HW_ID_EEPROM) {
+
+			mtd_mft_v0_t mtd_mft = {MTD_MFT_v0};
+			rv = board_get_eeprom_hw_info(path, (mtd_mft_t *)&mtd_mft);
+
+			if (rv == OK) {
+				hw_revision = mtd_mft.hw_extended_id;
 			}
 		}
 	}
@@ -495,14 +496,14 @@ int board_set_eeprom_hw_info(const char *path, mtd_mft_t *mtd_mft_unk)
 
 	// Later this will be a demux on type
 	if (mtd_mft_unk->id != MTD_MFT_v0) {
-		printf("Verson is: %d, Only mft version %d is supported\n", mtd_mft_unk->id, MTD_MFT_v0);
+		printf("Version is: %d, Only mft version %d is supported\n", mtd_mft_unk->id, MTD_MFT_v0);
 		return -EINVAL;
 	}
 
 	mtd_mft_v0_t *mtd_mft = (mtd_mft_v0_t *)mtd_mft_unk;
 
-	if (mtd_mft->hw_extended_ver < HW_EEPROM_VERSION_MIN) {
-		printf("hardware version for EEPROM must be greater than %x\n", HW_EEPROM_VERSION_MIN);
+	if (mtd_mft->hw_extended_id < HW_EEPROM_ID_MIN) {
+		printf("hardware version for EEPROM must be greater than %d\n", HW_EEPROM_ID_MIN);
 		return -EINVAL;
 	}
 

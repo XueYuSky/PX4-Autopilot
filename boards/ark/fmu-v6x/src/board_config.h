@@ -125,7 +125,7 @@
 /* SPI */
 
 #define SPI6_nRESET_EXTERNAL1       /* PF10 */ (GPIO_OUTPUT|GPIO_PUSHPULL|GPIO_SPEED_2MHz|GPIO_OUTPUT_CLEAR|GPIO_PORTF|GPIO_PIN10)
-#define GPIO_SYNC                   /* PE9  */ (GPIO_OUTPUT|GPIO_PUSHPULL|GPIO_SPEED_100MHz|GPIO_OUTPUT_CLEAR|GPIO_PORTE|GPIO_PIN9)
+#define SPI6_RESET(on_true)          px4_arch_gpiowrite(SPI6_nRESET_EXTERNAL1, !(on_true))
 
 /* I2C busses */
 
@@ -211,23 +211,18 @@
 #define GPIO_HW_VER_SENSE      /* PH3 */  GPIO_ADC3_INP14
 #define HW_INFO_INIT_PREFIX    "ARKV6X"
 
-#define BOARD_NUM_SPI_CFG_HW_VERSIONS 2 // Rev 0 and Rev 3,4 Sensor sets
+#define BOARD_NUM_SPI_CFG_HW_VERSIONS 8 // Rev 0 and Rev 1
 //                 Base/FMUM
-#define ARKV6X00   HW_VER_REV(0x0,0x0) // ARKV6X,                 Rev 0
-#define ARKV6X01   HW_VER_REV(0x0,0x1) // ARKV6X,     BMI388 I2C2 Rev 1
-#define ARKV6X03   HW_VER_REV(0x0,0x3) // ARKV6X,     Sensor Set  Rev 3
-#define ARKV6X04   HW_VER_REV(0x0,0x4) // ARKV6X,     Sensor Set  Rev 4
-#define ARKV6X10   HW_VER_REV(0x1,0x0) // NO PX4IO,               Rev 0
-#define ARKV6X13   HW_VER_REV(0x1,0x3) // NO PX4IO,   Sensor Set  Rev 3
-#define ARKV6X14   HW_VER_REV(0x1,0x4) // NO PX4IO,   Sensor Set  Rev 4
-//#define ARKV6X40   HW_VER_REV(0x4,0x0) // ARKV6X,                    HB CM4 base Rev 0 // never shipped
-//#define ARKV6X41   HW_VER_REV(0x4,0x1) // ARKV6X,     BMI388 I2C2    HB CM4 base Rev 1 // never shipped
-#define ARKV6X43   HW_VER_REV(0x4,0x3) // ARKV6X,     Sensor Set     HB CM4 base Rev 3
-#define ARKV6X44   HW_VER_REV(0x4,0x4) // ARKV6X,     Sensor Set     HB CM4 base Rev 4
-#define ARKV6X50   HW_VER_REV(0x5,0x0) // ARKV6X, ARKV6X Rev 0 with HB Mini Rev 5
-//#define ARKV6X51   HW_VER_REV(0x5,0x1) // ARKV6X,     BMI388 I2C2    HB Mini Rev 1 // never shipped
-#define ARKV6X53   HW_VER_REV(0x5,0x3) // ARKV6X,     Sensor Set     HB Mini Rev 3
-#define ARKV6X54   HW_VER_REV(0x5,0x4) // ARKV6X,     Sensor Set     HB Mini Rev 4
+#define ARKV6X00   HW_VER_REV(0x0,0x0) // ARKV6X,     Sensor Set  Rev 0
+#define ARKV6X01   HW_VER_REV(0x0,0x1) // ARKV6X,     Sensor Set  Rev 1
+//#define ARKV6X03   HW_VER_REV(0x0,0x3) // ARKV6X,     Sensor Set  Rev 3
+//#define ARKV6X04   HW_VER_REV(0x0,0x4) // ARKV6X,     Sensor Set  Rev 4
+#define ARKV6X10   HW_VER_REV(0x1,0x0) // NO PX4IO,   Sensor Set  Rev 0
+#define ARKV6X11   HW_VER_REV(0x1,0x1) // NO PX4IO,   Sensor Set  Rev 1
+#define ARKV6X40   HW_VER_REV(0x4,0x0) // ARKV6X,     Sensor Set  Rev 0   HB CM4 base Rev 3
+#define ARKV6X41   HW_VER_REV(0x4,0x1) // ARKV6X,     Sensor Set  Rev 1   HB CM4 base Rev 4
+#define ARKV6X50   HW_VER_REV(0x5,0x0) // ARKV6X,     Sensor Set  Rev 0   HB Mini Rev 5
+#define ARKV6X51   HW_VER_REV(0x5,0x1) // ARKV6X,     Sensor Set  Rev 1   HB Mini Rev 1 // never shipped
 
 #define UAVCAN_NUM_IFACES_RUNTIME  1
 
@@ -251,8 +246,19 @@
 
 /* PWM
  */
-#define DIRECT_PWM_OUTPUT_CHANNELS   9
+#define DIRECT_PWM_OUTPUT_CHANNELS   8
 
+#define GPIO_FMU_CH1                    /* PI0  */ (GPIO_INPUT|GPIO_PULLDOWN|GPIO_PORTI|GPIO_PIN0)
+#define GPIO_FMU_CH2                    /* PH12 */ (GPIO_INPUT|GPIO_PULLDOWN|GPIO_PORTH|GPIO_PIN12)
+#define GPIO_FMU_CH3                    /* PH11 */ (GPIO_INPUT|GPIO_PULLDOWN|GPIO_PORTH|GPIO_PIN11)
+#define GPIO_FMU_CH4                    /* PH10 */ (GPIO_INPUT|GPIO_PULLDOWN|GPIO_PORTH|GPIO_PIN10)
+#define GPIO_FMU_CH5                    /* PD13 */ (GPIO_INPUT|GPIO_PULLDOWN|GPIO_PORTD|GPIO_PIN13)
+#define GPIO_FMU_CH6                    /* PD14 */ (GPIO_INPUT|GPIO_PULLDOWN|GPIO_PORTD|GPIO_PIN14)
+#define GPIO_FMU_CH7                    /* PH6  */ (GPIO_INPUT|GPIO_PULLDOWN|GPIO_PORTH|GPIO_PIN6)
+#define GPIO_FMU_CH8                    /* PH9  */ (GPIO_INPUT|GPIO_PULLDOWN|GPIO_PORTH|GPIO_PIN9)
+
+#define GPIO_FMU_CAP                    /* PE11 */ (GPIO_INPUT|GPIO_PULLDOWN|GPIO_PORTE|GPIO_PIN11)
+#define GPIO_SPIX_SYNC                  /* PE9  */ (GPIO_INPUT|GPIO_PULLDOWN|GPIO_PORTE|GPIO_PIN9)
 
 /* Power supply control and monitoring GPIOs */
 
@@ -298,7 +304,6 @@
 #define VDD_3V3_SD_CARD_EN(on_true)        px4_arch_gpiowrite(GPIO_VDD_3V3_SD_CARD_EN, (on_true))
 #define VDD_3V3_ETH_POWER_EN(on_true)      px4_arch_gpiowrite(GPIO_ETH_POWER_EN, (on_true))
 
-
 /* Tone alarm output */
 
 #define TONE_ALARM_TIMER        14  /* Timer 14 */
@@ -325,7 +330,6 @@
 /* RC Serial port */
 
 #define RC_SERIAL_PORT                     "/dev/ttyS5"
-#define RC_SERIAL_SINGLEWIRE
 
 /* Input Capture Channels. */
 #define INPUT_CAP1_TIMER                  1
@@ -375,11 +379,11 @@
 /* SD card bringup does not work if performed on the IDLE thread because it
  * will cause waiting.  Use either:
  *
- *  CONFIG_LIB_BOARDCTL=y, OR
+ *  CONFIG_BOARDCTL=y, OR
  *  CONFIG_BOARD_INITIALIZE=y && CONFIG_BOARD_INITTHREAD=y
  */
 
-#if defined(CONFIG_BOARD_INITIALIZE) && !defined(CONFIG_LIB_BOARDCTL) && \
+#if defined(CONFIG_BOARD_INITIALIZE) && !defined(CONFIG_BOARDCTL) && \
    !defined(CONFIG_BOARD_INITTHREAD)
 #  warning SDIO initialization cannot be perfomed on the IDLE thread
 #endif
@@ -459,7 +463,6 @@
 		GPIO_VDD_3V3_SPEKTRUM_POWER_EN,   \
 		GPIO_VDD_3V3_SD_CARD_EN,          \
 		GPIO_PD15,                        \
-		GPIO_SYNC,                        \
 		SPI6_nRESET_EXTERNAL1,            \
 		GPIO_ETH_POWER_EN,                \
 		GPIO_NFC_GPIO,                    \
@@ -467,7 +470,17 @@
 		GPIO_nSAFETY_SWITCH_LED_OUT_INIT, \
 		GPIO_SAFETY_SWITCH_IN,            \
 		GPIO_PG6,                         \
-		GPIO_nARMED_INIT                  \
+		GPIO_nARMED_INIT,                 \
+		GPIO_FMU_CH1,     	          \
+		GPIO_FMU_CH2,     	          \
+		GPIO_FMU_CH3,     	          \
+		GPIO_FMU_CH4,     	          \
+		GPIO_FMU_CH5,     	          \
+		GPIO_FMU_CH6,     	          \
+		GPIO_FMU_CH7,     	          \
+		GPIO_FMU_CH8,     	          \
+		GPIO_FMU_CAP,     	          \
+		GPIO_SPIX_SYNC                    \
 	}
 
 #define BOARD_ENABLE_CONSOLE_BUFFER
@@ -475,7 +488,8 @@
 #define PX4_I2C_BUS_MTD      4,5
 
 
-#define BOARD_NUM_IO_TIMERS 5
+#define BOARD_NUM_IO_TIMERS  3
+#define BOARD_SPIX_SYNC_FREQ 32000
 
 __BEGIN_DECLS
 

@@ -74,7 +74,7 @@ if [ -f $PARAM_FILE ]; then
 	then
 		echo "ERROR [init] param import failed"
 
-		param dump $PARAM_FILE
+		bsondump $PARAM_FILE
 
 		# try to make a backup copy
 		cp $PARAM_FILE param_import_fail.bson
@@ -85,7 +85,7 @@ if [ -f $PARAM_FILE ]; then
 			echo "[init] importing from parameter backup"
 
 			# dump current backup file contents for comparison
-			param dump $PARAM_BACKUP_FILE
+			bsondump $PARAM_BACKUP_FILE
 
 			param import $PARAM_BACKUP_FILE
 
@@ -129,6 +129,7 @@ fi
 # multi-instance setup
 # shellcheck disable=SC2154
 param set MAV_SYS_ID $((px4_instance+1))
+param set UXRCE_DDS_KEY $((px4_instance+1))
 
 if [ $AUTOCNF = yes ]
 then
@@ -142,7 +143,9 @@ then
 	param set CAL_GYRO2_ID 1311004 # 1311004: DRV_IMU_DEVTYPE_SIM, BUS: 3, ADDR: 1, TYPE: SIMULATION
 
 	param set CAL_MAG0_ID 197388
+	param set CAL_MAG0_PRIO 50
 	param set CAL_MAG1_ID 197644
+	param set CAL_MAG1_PRIO 50
 
 	param set SENS_BOARD_X_OFF 0.000001
 	param set SENS_DPRES_OFF 0.001
@@ -165,8 +168,6 @@ param set-default EKF2_REQ_GPS_H 0.5
 # Multi-EKF
 param set-default EKF2_MULTI_IMU 3
 param set-default SENS_IMU_MODE 0
-param set-default EKF2_MULTI_MAG 2
-param set-default SENS_MAG_MODE 0
 
 param set-default IMU_GYRO_FFT_EN 1
 param set-default MAV_PROTO_VER 2 # Ensures QGC does not drop the first few packets after a SITL restart due to MAVLINK 1 packets
@@ -182,6 +183,14 @@ param set-default SDLOG_DIRS_MAX 7
 param set-default TRIG_INTERFACE 3
 
 param set-default SYS_FAILURE_EN 1
+# Enable low-battery actions by default for (automated) testing. Battery sim
+# does not go below 50% by default, but failure injection can trigger failsafes.
+param set-default COM_LOW_BAT_ACT 2
+
+# Allow to override SYS_MC_EST_GROUP via env
+if [ -n "$SYS_MC_EST_GROUP" ]; then
+	param set SYS_MC_EST_GROUP $SYS_MC_EST_GROUP
+fi
 
 # Adapt timeout parameters if simulation runs faster or slower than realtime.
 if [ -n "$PX4_SIM_SPEED_FACTOR" ]; then
@@ -259,8 +268,33 @@ fi
 
 navigator start
 
-# Try to start the microdds_client with UDP transport if module exists
-microdds_client start -t udp -p 8888
+# Try to start the UXRCE-DDS Client with UDP transport if module exists
+uxrce_dds_ns=""
+if [ "$px4_instance" -ne "0" ]
+then
+	# for multi intances setup, add namespace prefix
+	uxrce_dds_ns="-n px4_$px4_instance"
+fi
+if [ -n "$PX4_UXRCE_DDS_NS" ]
+then
+	# Override namespace if environment variable is defined
+	uxrce_dds_ns="-n $PX4_UXRCE_DDS_NS"
+fi
+if [ -n "$ROS_DOMAIN_ID" ]
+then
+	# Match UXRCE_DDS_DOM_ID with ROS_DOMAIN_ID, if defined
+	param set UXRCE_DDS_DOM_ID $ROS_DOMAIN_ID
+else
+	param set UXRCE_DDS_DOM_ID 0
+fi
+uxrce_dds_port=8888
+if [ -n "$PX4_UXRCE_DDS_PORT" ]
+then
+	# Override port if environment variable is defined
+	uxrce_dds_port="$PX4_UXRCE_DDS_PORT"
+fi
+
+uxrce_dds_client start -t udp -h 127.0.0.1 -p $uxrce_dds_port $uxrce_dds_ns
 
 if param greater -s MNT_MODE_IN -1
 then

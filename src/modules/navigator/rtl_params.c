@@ -175,7 +175,7 @@ PARAM_DEFINE_INT32(RTL_HDG_MD, 0);
 /**
  * RTL time estimate safety margin factor
  *
- * Safety factor that is used to scale the actual RTL time estiamte.
+ * Safety factor that is used to scale the actual RTL time estimate.
  * Time with margin = RTL_TIME_FACTOR * time + RTL_TIME_MARGIN
  *
  * @min 1.0
@@ -200,3 +200,13 @@ PARAM_DEFINE_FLOAT(RTL_TIME_FACTOR, 1.1f);
  * @group Return To Land
  */
 PARAM_DEFINE_INT32(RTL_TIME_MARGIN, 100);
+
+/**
+ * RTL force approach landing
+ *
+ * Only consider RTL point, if it has an approach defined.
+ *
+ * @boolean
+ * @group Return To Land
+ */
+PARAM_DEFINE_INT32(RTL_APPR_FORCE, 0);

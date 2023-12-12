@@ -42,10 +42,13 @@
 #define BOARD_HAS_NO_RESET
 #define BOARD_HAS_NO_BOOTLOADER
 
-/*
- * I2C buses
- */
-#define PX4_NUMBER_I2C_BUSES    3
+// Define this as empty since there are no I2C buses
+#define BOARD_I2C_BUS_CLOCK_INIT
 
 #include <system_config.h>
 #include <px4_platform_common/board_common.h>
+
+#define BOARD_OVERRIDE_UUID "MODALAIVOXL20000" // must be of length 16
+#define PX4_SOC_ARCH_ID PX4_SOC_ARCH_ID_VOXL2
+
+#define MODAL_IO_DEFAULT_PORT 	"2"

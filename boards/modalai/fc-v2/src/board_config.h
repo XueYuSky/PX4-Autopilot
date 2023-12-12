@@ -91,6 +91,12 @@
 #  define GPIO_nLED_GREEN      /* PE4 */  (GPIO_OUTPUT|GPIO_OPENDRAIN|GPIO_SPEED_50MHz|GPIO_OUTPUT_SET|GPIO_PORTE|GPIO_PIN4)
 #  define GPIO_nLED_BLUE       /* PE5 */  (GPIO_OUTPUT|GPIO_OPENDRAIN|GPIO_SPEED_50MHz|GPIO_OUTPUT_SET|GPIO_PORTE|GPIO_PIN5)
 
+// GPIO_nLED_2_RED/ GPIO_nLED_2_GREEN /GPIO_nLED_2_BLUE are for v1 LED tests
+
+#  define GPIO_nLED_2_RED      /* PI0 */  (GPIO_OUTPUT|GPIO_OPENDRAIN|GPIO_SPEED_50MHz|GPIO_OUTPUT_SET|GPIO_PORTI|GPIO_PIN0)
+#  define GPIO_nLED_2_GREEN    /* PH11 */ (GPIO_OUTPUT|GPIO_OPENDRAIN|GPIO_SPEED_50MHz|GPIO_OUTPUT_SET|GPIO_PORTH|GPIO_PIN11)
+#  define GPIO_nLED_2_BLUE     /* PA2 */  (GPIO_OUTPUT|GPIO_OPENDRAIN|GPIO_SPEED_50MHz|GPIO_OUTPUT_SET|GPIO_PORTA|GPIO_PIN2)
+
 #  define BOARD_HAS_CONTROL_STATUS_LEDS      1
 #  define BOARD_OVERLOAD_LED     LED_RED
 #  define BOARD_ARMED_STATE_LED  LED_BLUE
@@ -208,6 +214,12 @@
 
 #define CAN1_SILENT                       /* PD15 */  (GPIO_OUTPUT|GPIO_PUSHPULL|GPIO_SPEED_2MHz|GPIO_OUTPUT_CLEAR|GPIO_PORTD|GPIO_PIN15)
 
+/* For primary/backup signaling with VOXL, 2 pins on J4 are exposed */
+// GPIO_VOXL_STATUS_OUT/ GPIO_VOXL_STATUS_IN are for v1 Spare MSS Communications Interface and J4 tests
+
+#define GPIO_VOXL_STATUS_OUT            /* PE4 */ (GPIO_OUTPUT|GPIO_PUSHPULL|GPIO_SPEED_2MHz|GPIO_OUTPUT_CLEAR|GPIO_PORTE|GPIO_PIN4)
+#define GPIO_VOXL_STATUS_IN             /* PE3 */ (GPIO_INPUT|GPIO_FLOAT|GPIO_PORTE|GPIO_PIN3)
+
 /* Define True logic Power Control in arch agnostic form */
 
 #define VDD_3V3_SPEKTRUM_POWER_EN(on_true) px4_arch_gpiowrite(GPIO_VDD_3V3_SPEKTRUM_POWER_EN, (on_true))
@@ -272,11 +284,11 @@
 /* SD card bringup does not work if performed on the IDLE thread because it
  * will cause waiting.  Use either:
  *
- *  CONFIG_LIB_BOARDCTL=y, OR
+ *  CONFIG_BOARDCTL=y, OR
  *  CONFIG_BOARD_INITIALIZE=y && CONFIG_BOARD_INITTHREAD=y
  */
 
-#if defined(CONFIG_BOARD_INITIALIZE) && !defined(CONFIG_LIB_BOARDCTL) && \
+#if defined(CONFIG_BOARD_INITIALIZE) && !defined(CONFIG_BOARDCTL) && \
    !defined(CONFIG_BOARD_INITTHREAD)
 #  warning SDIO initialization cannot be perfomed on the IDLE thread
 #endif
@@ -338,8 +350,8 @@
 
 #define BOARD_NUM_IO_TIMERS 5
 
-// J1 / TELEM1 / USART7
-#define MODALAI_ESC_DEFAULT_PORT                  "/dev/ttyS6"
+// J5 USART5 TELEM2 Port next to PWM connector
+#define MODAL_IO_DEFAULT_PORT                     "/dev/ttyS4"
 
 __BEGIN_DECLS
 

@@ -1,6 +1,6 @@
 /****************************************************************************
  *
- *   Copyright (c) 2014-2019, 2021 PX4 Development Team. All rights reserved.
+ *   Copyright (c) 2014-2021 PX4 Development Team. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -219,6 +219,11 @@ int LightwareLaserSerial::collect()
 
 	} else {
 		for (int i = 0; i < ret; i++) {
+			// Check for overflow
+			if (_linebuf_index >= sizeof(_linebuf)) {
+				_parse_state = LW_PARSE_STATE0_UNSYNC;
+			}
+
 			if (OK == lightware_parser(readbuf[i], _linebuf, &_linebuf_index, &_parse_state, &distance_m)) {
 				valid = true;
 			}
@@ -308,7 +313,7 @@ void LightwareLaserSerial::Run()
 		// LW20: Enable serial mode by sending some characters
 		if (hw_model == 8) {
 			const char *data = "www\r\n";
-			(void)!::write(_fd, &data, strlen(data));
+			(void)!::write(_fd, data, strlen(data));
 		}
 	}
 

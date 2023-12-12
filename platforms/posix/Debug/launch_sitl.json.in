@@ -2,52 +2,7 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "SITL (GZ)",
-            "type": "cppdbg",
-            "request": "launch",
-            "program": "${command:cmake.launchTargetPath}",
-            "args": [
-                "${workspaceFolder}/ROMFS/px4fmu_common",
-                "-s", "etc/init.d-posix/rcS"
-            ],
-            "stopAtEntry": false,
-            "cwd": "${command:cmake.buildDirectory}/rootfs",
-            "environment": [
-                {
-                    "name": "PX4_SIM_MODEL",
-                    "value": "${input:PX4_GZ_MODEL}"
-                }
-            ],
-            "externalConsole": false,
-            "postDebugTask": "ign gazebo kill",
-            "linux": {
-                "MIMode": "gdb",
-                "externalConsole": false,
-                "setupCommands": [
-                    {
-                        "description": "Enable pretty-printing for gdb",
-                        "text": "-enable-pretty-printing",
-                        "ignoreFailures": true
-                    },
-                    {
-                        "description": "PX4 ignore wq signals",
-                        "text": "handle SIGCONT nostop noprint nopass",
-                        "ignoreFailures": true
-                    }
-                ]
-            },
-            "osx": {
-                "MIMode": "lldb",
-                "externalConsole": true,
-                "setupCommands": [
-                    {
-                        "text": "pro hand -p true -s false -n false SIGCONT",
-                    }
-                ]
-            }
-        },
-        {
-            "name": "SITL (sihsim 10040_quadx)",
+            "name": "SITL (gz)",
             "type": "cppdbg",
             "request": "launch",
             "program": "${command:cmake.launchTargetPath}",
@@ -59,55 +14,10 @@
             "environment": [
                 {
                     "name": "PX4_SIM_MODEL",
-                    "value": "quadx"
+                    "value": "gz_${input:PX4_GZ_MODEL}"
                 }
             ],
             "externalConsole": false,
-            "postDebugTask": "px4_sitl_cleanup",
-            "linux": {
-                "MIMode": "gdb",
-                "externalConsole": false,
-                "setupCommands": [
-                    {
-                        "description": "Enable pretty-printing for gdb",
-                        "text": "-enable-pretty-printing",
-                        "ignoreFailures": true
-                    },
-                    {
-                        "description": "PX4 ignore wq signals",
-                        "text": "handle SIGCONT nostop noprint nopass",
-                        "ignoreFailures": true
-                    }
-                ]
-            },
-            "osx": {
-                "MIMode": "lldb",
-                "externalConsole": true,
-                "setupCommands": [
-                    {
-                        "text": "pro hand -p true -s false -n false SIGCONT",
-                    }
-                ]
-            }
-        },
-        {
-            "name": "SITL (Gazebo Classic iris)",
-            "type": "cppdbg",
-            "request": "launch",
-            "program": "${command:cmake.launchTargetPath}",
-            "args": [
-                "${workspaceFolder}/ROMFS/px4fmu_common"
-            ],
-            "stopAtEntry": false,
-            "cwd": "${command:cmake.buildDirectory}/rootfs",
-            "environment": [
-                {
-                    "name": "PX4_SIM_MODEL",
-                    "value": "iris"
-                }
-            ],
-            "externalConsole": false,
-            "preLaunchTask": "gazebo",
             "postDebugTask": "gazebo kill",
             "linux": {
                 "MIMode": "gdb",
@@ -136,7 +46,48 @@
             }
         },
         {
-            "name": "SITL (jmavsim)",
+            "name": "SITL (sihsim_quadx SYS_AUTOSTART=10040)",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${command:cmake.launchTargetPath}",
+            "args": [
+                "${workspaceFolder}/ROMFS/px4fmu_common"
+            ],
+            "stopAtEntry": false,
+            "cwd": "${command:cmake.buildDirectory}/rootfs",
+            "environment": [
+                {
+                    "name": "PX4_SYS_AUTOSTART",
+                    "value": "10040"
+                }
+            ],
+            "postDebugTask": "px4_sitl_cleanup",
+            "linux": {
+                "MIMode": "gdb",
+                "setupCommands": [
+                    {
+                        "description": "Enable pretty-printing for gdb",
+                        "text": "-enable-pretty-printing",
+                        "ignoreFailures": true
+                    },
+                    {
+                        "description": "PX4 ignore wq signals",
+                        "text": "handle SIGCONT nostop noprint nopass",
+                        "ignoreFailures": true
+                    }
+                ]
+            },
+            "osx": {
+                "MIMode": "lldb",
+                "setupCommands": [
+                    {
+                        "text": "pro hand -p true -s false -n false SIGCONT",
+                    }
+                ]
+            }
+        },
+        {
+            "name": "SITL (Gazebo Classic iris)",
             "type": "cppdbg",
             "request": "launch",
             "program": "${command:cmake.launchTargetPath}",
@@ -148,12 +99,12 @@
             "environment": [
                 {
                     "name": "PX4_SIM_MODEL",
-                    "value": "iris"
+                    "value": "gazebo-classic_iris"
                 }
             ],
             "externalConsole": false,
-            "preLaunchTask": "jmavsim",
-            "postDebugTask": "jmavsim kill",
+            "preLaunchTask": "gazebo-classic",
+            "postDebugTask": "gazebo-classic kill",
             "linux": {
                 "MIMode": "gdb",
                 "externalConsole": false,
@@ -173,6 +124,47 @@
             "osx": {
                 "MIMode": "lldb",
                 "externalConsole": true,
+                "setupCommands": [
+                    {
+                        "text": "pro hand -p true -s false -n false SIGCONT",
+                    }
+                ]
+            }
+        },
+        {
+            "name": "SITL (jmavsim_iris SYS_AUTOSTART=10017)",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${command:cmake.launchTargetPath}",
+            "args": [
+                "${workspaceFolder}/ROMFS/px4fmu_common"
+            ],
+            "stopAtEntry": false,
+            "cwd": "${command:cmake.buildDirectory}/rootfs",
+            "environment": [
+                {
+                    "name": "PX4_SYS_AUTOSTART",
+                    "value": "10017"
+                }
+            ],
+            "postDebugTask": "jmavsim kill",
+            "linux": {
+                "MIMode": "gdb",
+                "setupCommands": [
+                    {
+                        "description": "Enable pretty-printing for gdb",
+                        "text": "-enable-pretty-printing",
+                        "ignoreFailures": true
+                    },
+                    {
+                        "description": "PX4 ignore wq signals",
+                        "text": "handle SIGCONT nostop noprint nopass",
+                        "ignoreFailures": true
+                    }
+                ]
+            },
+            "osx": {
+                "MIMode": "lldb",
                 "setupCommands": [
                     {
                         "text": "pro hand -p true -s false -n false SIGCONT",
@@ -230,6 +222,9 @@
             "description": "GZ vehicle model",
             "options": [
               "x500",
+              "x500_depth",
+              "rc_cessna",
+              "standard_vtol",
             ],
             "default": "x500"
         }

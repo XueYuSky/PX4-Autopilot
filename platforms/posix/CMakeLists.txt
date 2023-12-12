@@ -3,13 +3,9 @@ include_directories(${CMAKE_CURRENT_BINARY_DIR})
 
 get_property(module_libraries GLOBAL PROPERTY PX4_MODULE_LIBRARIES)
 
-# When building with catkin, do not change CMAKE_RUNTIME_OUTPUT_DIR from
-# CMAKE_CURRENT_BINARY_DIR ''./platforms/posix' to './bin'
-if (NOT CATKIN_DEVEL_PREFIX)
-	set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
-	set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_BINARY_DIR}/bin)
-	set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_BINARY_DIR}/bin)
-endif()
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_BINARY_DIR}/bin)
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_BINARY_DIR}/bin)
 
 set(PX4_SHELL_COMMAND_PREFIX "px4-")
 
@@ -97,17 +93,13 @@ if(EXISTS "${PX4_BOARD_DIR}/cmake/upload.cmake")
 	include(${PX4_BOARD_DIR}/cmake/upload.cmake)
 endif()
 
+# board defined link libraries
+if(EXISTS "${PX4_BOARD_DIR}/cmake/link_libraries.cmake")
+	include(${PX4_BOARD_DIR}/cmake/link_libraries.cmake)
+endif()
 
 if("${PX4_BOARD}" MATCHES "beaglebone_blue")
 	target_link_libraries(px4 PRIVATE robotics_cape)
-
-elseif("${PX4_BOARD}" MATCHES "modalai_voxl2")
-	# libfc_sensor.so is provided in the Docker build environment
-	target_link_libraries(px4 PRIVATE
-			/home/libfc_sensor.so
-			px4_layer
-			${module_libraries}
-	)
 
 elseif("${PX4_BOARD}" MATCHES "emlid_navio2")
 	target_link_libraries(px4 PRIVATE atomic)
@@ -176,7 +168,7 @@ elseif("${PX4_BOARD}" MATCHES "sitl")
 	# px4 Tools files
 	install(
 		PROGRAMS
-			${PROJECT_SOURCE_DIR}/Tools/simulation/gazebo/setup_gazebo.bash
+			${PROJECT_SOURCE_DIR}/Tools/simulation/gazebo-classic/setup_gazebo.bash
 			${PROJECT_SOURCE_DIR}/Tools/upload_log.py
 		DESTINATION
 			${PROJECT_NAME}/Tools
@@ -190,33 +182,13 @@ elseif("${PX4_BOARD}" MATCHES "sitl")
 			${PROJECT_NAME}/build/px4_sitl_default
 		)
 
-	# sitl_gazebo built plugins
+	# gazebo dirs
 	install(
 		DIRECTORY
-			${PX4_BINARY_DIR}/build_gazebo
+			${PROJECT_SOURCE_DIR}/Tools/simulation/gz/models
+			${PROJECT_SOURCE_DIR}/Tools/simulation/gz/worlds
 		DESTINATION
-			${PROJECT_NAME}/build/px4_sitl_default
-		FILES_MATCHING
-			PATTERN "CMakeFiles" EXCLUDE
-			PATTERN "*.so"
-		)
-
-	# sitl_gazebo dirs
-	install(
-		DIRECTORY
-			${PROJECT_SOURCE_DIR}/Tools/simulation/gazebo/sitl_gazebo/models
-			${PROJECT_SOURCE_DIR}/Tools/simulation/gazebo/sitl_gazebo/worlds
-		DESTINATION
-			${PROJECT_NAME}/Tools/simulation/gazebo/sitl_gazebo
-		)
-
-	# sitl_gazebo files
-	install(
-		FILES
-			${PROJECT_SOURCE_DIR}/Tools/simulation/gazebo/sitl_gazebo/CMakeLists.txt
-			${PROJECT_SOURCE_DIR}/Tools/simulation/gazebo/sitl_gazebo/package.xml
-		DESTINATION
-			${PROJECT_NAME}/Tools/simulation/gazebo/sitl_gazebo
+			${PROJECT_NAME}/Tools/simulation/gazebo-classic/sitl_gazebo-classic
 		)
 
 endif()

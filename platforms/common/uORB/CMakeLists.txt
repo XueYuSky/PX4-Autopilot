@@ -34,6 +34,10 @@
 # this includes the generated topics directory
 include_directories(${CMAKE_CURRENT_BINARY_DIR})
 
+if(CONFIG_LIB_CDRSTREAM)
+	include_directories(${CMAKE_CURRENT_SOURCE_DIR}/src/lib/cdrstream/cyclonedds/src/core/ddsc/include)
+endif()
+
 set(SRCS)
 
 set(SRCS_COMMON
@@ -50,6 +54,8 @@ set(SRCS_COMMON
 	uORBCommon.hpp
 	uORBCommunicator.hpp
 	uORBManager.hpp
+	uORBMessageFields.cpp
+	uORBMessageFields.hpp
 	uORBUtils.cpp
 	uORBUtils.hpp
 	uORBDeviceMaster.hpp
@@ -72,7 +78,7 @@ if (NOT DEFINED CONFIG_BUILD_FLAT AND "${PX4_PLATFORM}" MATCHES "nuttx")
 		${SRCS_COMMON}
 		${SRCS_KERNEL}
 		)
-	target_link_libraries(uORB_kernel PRIVATE cdev uorb_msgs)
+	target_link_libraries(uORB_kernel PRIVATE cdev uorb_msgs nuttx_mm heatshrink)
 	target_compile_options(uORB_kernel PRIVATE ${MAX_CUSTOM_OPT_LEVEL} -D__KERNEL__)
 
 	# User side library in nuttx kernel/protected build
@@ -80,9 +86,17 @@ if (NOT DEFINED CONFIG_BUILD_FLAT AND "${PX4_PLATFORM}" MATCHES "nuttx")
 		${SRCS_COMMON}
 		${SRCS_USER}
 		)
+elseif("${PX4_PLATFORM}" MATCHES "nuttx")
+
+	# Library for NuttX (flat build, posix...)
+	px4_add_library(uORB
+		${SRCS_COMMON}
+		${SRCS_KERNEL}
+		)
+	target_link_libraries(uORB PRIVATE cdev nuttx_mm)
 else()
 
-	# Library for all other targets (flat build, posix...)
+	# Library for all other targets (posix...)
 	px4_add_library(uORB
 		${SRCS_COMMON}
 		${SRCS_KERNEL}
@@ -90,9 +104,11 @@ else()
 	target_link_libraries(uORB PRIVATE cdev)
 endif()
 
-target_link_libraries(uORB PRIVATE uorb_msgs)
+target_link_libraries(uORB PRIVATE uorb_msgs heatshrink)
 target_compile_options(uORB PRIVATE ${MAX_CUSTOM_OPT_LEVEL})
 
 if(PX4_TESTING)
 	add_subdirectory(uORB_tests)
 endif()
+
+px4_add_functional_gtest(SRC uORBMessageFieldsTest.cpp LINKLIBS uORB)

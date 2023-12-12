@@ -68,7 +68,6 @@
 #include <uORB/SubscriptionCallback.hpp>
 #include <uORB/SubscriptionInterval.hpp>
 #include <uORB/topics/actuator_armed.h>
-#include <uORB/topics/actuator_controls.h>
 #include <uORB/topics/actuator_outputs.h>
 #include <uORB/topics/input_rc.h>
 #include <uORB/topics/vehicle_command.h>
@@ -177,7 +176,7 @@ private:
 	unsigned		_max_rc_input{0};		///< Maximum receiver channels supported by PX4IO
 	unsigned		_max_transfer{16};		///< Maximum number of I2C transfers supported by PX4IO
 
-	bool			_first_param_update{true};
+	bool			_first_update_cycle{true};
 	uint32_t    		_group_channels[PX4IO_P_SETUP_PWM_RATE_GROUP3 - PX4IO_P_SETUP_PWM_RATE_GROUP0 + 1] {};
 
 	hrt_abstime		_poll_last{0};
@@ -210,7 +209,7 @@ private:
 	bool			_timer_rates_configured{false};
 
 	/* advertised topics */
-	uORB::PublicationMulti<input_rc_s>	_to_input_rc{ORB_ID(input_rc)};
+	uORB::PublicationMulti<input_rc_s>	_input_rc_pub{ORB_ID(input_rc)};
 	uORB::Publication<px4io_status_s>	_px4io_status_pub{ORB_ID(px4io_status)};
 
 	ButtonPublisher	_button_publisher;
@@ -337,8 +336,7 @@ private:
 		(ParamInt<px4::params::RC_RSSI_PWM_MAX>) _param_rc_rssi_pwm_max,
 		(ParamInt<px4::params::RC_RSSI_PWM_MIN>) _param_rc_rssi_pwm_min,
 		(ParamInt<px4::params::SENS_EN_THERMAL>) _param_sens_en_themal,
-		(ParamInt<px4::params::SYS_HITL>) _param_sys_hitl,
-		(ParamInt<px4::params::SYS_USE_IO>) _param_sys_use_io
+		(ParamInt<px4::params::SYS_HITL>) _param_sys_hitl
 	)
 };
 
@@ -469,7 +467,7 @@ int PX4IO::init()
 	}
 
 	/* try to claim the generic PWM output device node as well - it's OK if we fail at this */
-	if (_param_sys_hitl.get() <= 0 && _param_sys_use_io.get() == 1) {
+	if (_param_sys_hitl.get() <= 0) {
 		_mixing_output.setMaxTopicUpdateRate(MIN_TOPIC_UPDATE_INTERVAL);
 	}
 
@@ -633,12 +631,14 @@ void PX4IO::Run()
 		}
 	}
 
-	_mixing_output.updateSubscriptions(true, true);
-
 	// minimal backup scheduling
 	ScheduleDelayed(20_ms);
 
+	// check at end of cycle (updateSubscriptions() can potentially change to a different WorkQueue thread)
+	_mixing_output.updateSubscriptions(true);
+
 	perf_end(_cycle_perf);
+	_first_update_cycle = false;
 }
 
 void PX4IO::updateTimerRateGroups()
@@ -696,40 +696,52 @@ void PX4IO::update_params()
 	if (!_mixing_output.armed().armed) {
 
 		// Automatically set the PWM rate and disarmed value when a channel is first set to a servo
-		if (!_first_param_update) {
+		if (!_first_update_cycle) {
 			for (size_t i = 0; i < _max_actuators; i++) {
 				if ((previously_set_functions & (1u << i)) == 0 && _mixing_output.functionParamHandle(i) != PARAM_INVALID) {
 					int32_t output_function;
 
-					if (param_get(_mixing_output.functionParamHandle(i), &output_function) == 0
-					    && output_function >= (int)OutputFunction::Servo1
-					    && output_function <= (int)OutputFunction::ServoMax) { // Function got set to a servo
-						int32_t val = 1500;
-						PX4_INFO("Setting disarmed to %i for channel %i", (int) val, i);
-						param_set(_mixing_output.disarmedParamHandle(i), &val);
+					if (param_get(_mixing_output.functionParamHandle(i), &output_function) == 0) {
+						if (output_function >= (int)OutputFunction::Servo1
+						    && output_function <= (int)OutputFunction::ServoMax) { // Function got set to a servo
+							int32_t val = 1500;
+							PX4_INFO("Setting channel %i disarmed to %i", (int) val, i);
+							param_set(_mixing_output.disarmedParamHandle(i), &val);
 
-						// If the whole timer group was not set previously, then set the pwm rate to 50 Hz
-						for (int timer = 0; timer < (int)(sizeof(_group_channels) / sizeof(_group_channels[0])); ++timer) {
+							// If the whole timer group was not set previously, then set the pwm rate to 50 Hz
+							for (int timer = 0; timer < (int)(sizeof(_group_channels) / sizeof(_group_channels[0])); ++timer) {
 
-							uint32_t channels = _group_channels[timer];
+								uint32_t channels = _group_channels[timer];
 
-							if ((channels & (1u << i)) == 0) {
-								continue;
-							}
+								if ((channels & (1u << i)) == 0) {
+									continue;
+								}
 
-							if ((channels & previously_set_functions) == 0) { // None of the channels was set
-								char param_name[17];
-								snprintf(param_name, sizeof(param_name), "%s_TIM%u", _mixing_output.paramPrefix(), timer);
+								if ((channels & previously_set_functions) == 0) { // None of the channels was set
+									char param_name[17];
+									snprintf(param_name, sizeof(param_name), "%s_TIM%u", _mixing_output.paramPrefix(), timer);
 
-								int32_t tim_config = 0;
-								param_t handle = param_find(param_name);
+									int32_t tim_config = 0;
+									param_t handle = param_find(param_name);
 
-								if (param_get(handle, &tim_config) == 0 && tim_config == 400) {
-									tim_config = 50;
-									PX4_INFO("setting timer %i to %i Hz", timer, (int) tim_config);
-									param_set(handle, &tim_config);
+									if (param_get(handle, &tim_config) == 0 && tim_config == 400) {
+										tim_config = 50;
+										PX4_INFO("setting timer %i to %i Hz", timer, (int) tim_config);
+										param_set(handle, &tim_config);
+									}
 								}
 							}
+						}
+
+						// Motors need a minimum value that idles the motor
+						if (output_function >= (int)OutputFunction::Motor1
+						    && output_function <= (int)OutputFunction::MotorMax) { // Function got set to a motor
+							int32_t val = 1100;
+							PX4_INFO("Setting channel %i minimum to %i", (int) val, i);
+							param_set(_mixing_output.minParamHandle(i), &val);
+							val = 1900;
+							PX4_INFO("Setting channel %i maximum to %i", (int) val, i);
+							param_set(_mixing_output.maxParamHandle(i), &val);
 						}
 					}
 				}
@@ -740,11 +752,7 @@ void PX4IO::update_params()
 		updateTimerRateGroups();
 		updateFailsafe();
 		updateDisarmed();
-		_first_param_update = false;
-		return;
 	}
-
-	_first_param_update = false;
 }
 
 void PX4IO::answer_command(const vehicle_command_s &cmd, uint8_t result)
@@ -1147,7 +1155,7 @@ int PX4IO::io_publish_raw_rc()
 		input_rc.link_quality = -1;
 		input_rc.rssi_dbm = NAN;
 
-		_to_input_rc.publish(input_rc);
+		_input_rc_pub.publish(input_rc);
 	}
 
 	return ret;
@@ -1548,6 +1556,10 @@ int PX4IO::custom_command(int argc, char *argv[])
 {
 	const char *verb = argv[0];
 
+	if (!strcmp(verb, "supported")) {
+		return 0;
+	}
+
 	if (!strcmp(verb, "checkcrc")) {
 		if (is_running()) {
 			PX4_ERR("io must be stopped");
@@ -1741,6 +1753,7 @@ Output driver communicating with the IO co-processor.
 	PRINT_MODULE_USAGE_ARG("dsm2|dsmx|dsmx8", "protocol", false);
 	PRINT_MODULE_USAGE_COMMAND_DESCR("sbus1_out", "enable sbus1 out");
 	PRINT_MODULE_USAGE_COMMAND_DESCR("sbus2_out", "enable sbus2 out");
+	PRINT_MODULE_USAGE_COMMAND_DESCR("supported", "Returns 0 if px4io is supported");
 	PRINT_MODULE_USAGE_COMMAND_DESCR("test_fmu_fail", "test: turn off IO updates");
 	PRINT_MODULE_USAGE_COMMAND_DESCR("test_fmu_ok", "re-enable IO updates");
 
@@ -1753,7 +1766,7 @@ Output driver communicating with the IO co-processor.
 extern "C" __EXPORT int px4io_main(int argc, char *argv[])
 {
 	if (!PX4_MFT_HW_SUPPORTED(PX4_MFT_PX4IO)) {
-		PX4_ERR("PX4IO Not Supported");
+		PX4_INFO("PX4IO Not Supported");
 		return -1;
 	}
 	return PX4IO::main(argc, argv);

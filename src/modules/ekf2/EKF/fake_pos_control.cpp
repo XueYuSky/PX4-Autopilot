@@ -52,7 +52,7 @@ void Ekf::controlFakePosFusion()
 		Vector2f obs_var;
 
 		if (_control_status.flags.in_air && _control_status.flags.tilt_align) {
-			obs_var(0) = obs_var(1) = sq(fmaxf(_params.pos_noaid_noise, _params.gps_pos_noise));
+			obs_var(0) = obs_var(1) = sq(fmaxf(_params.pos_noaid_noise, 1.f));
 
 		} else if (!_control_status.flags.in_air && _control_status.flags.vehicle_at_rest) {
 			// Accelerate tilt fine alignment by fusing more
@@ -65,7 +65,7 @@ void Ekf::controlFakePosFusion()
 
 		const float innov_gate = 3.f;
 
-		updateHorizontalPositionAidSrcStatus(_imu_sample_delayed.time_us, Vector2f(_last_known_pos), obs_var, innov_gate, aid_src);
+		updateHorizontalPositionAidSrcStatus(_time_delayed_us, Vector2f(_last_known_pos), obs_var, innov_gate, aid_src);
 
 
 		const bool continuing_conditions_passing = !isHorizontalAidingActive();
@@ -76,14 +76,16 @@ void Ekf::controlFakePosFusion()
 			if (continuing_conditions_passing) {
 
 				// always protect against extreme values that could result in a NaN
-				aid_src.fusion_enabled = (aid_src.test_ratio[0] < sq(100.0f / innov_gate))
-							 && (aid_src.test_ratio[1] < sq(100.0f / innov_gate));
-
-				fuseHorizontalPosition(aid_src);
+				if ((aid_src.test_ratio[0] < sq(100.0f / innov_gate))
+				&& (aid_src.test_ratio[1] < sq(100.0f / innov_gate))
+				) {
+					fuseHorizontalPosition(aid_src);
+				}
 
 				const bool is_fusion_failing = isTimedOut(aid_src.time_last_fuse, (uint64_t)4e5);
 
 				if (is_fusion_failing) {
+					ECL_WARN("fake position fusion failing, resetting");
 					resetFakePosFusion();
 				}
 
@@ -95,7 +97,6 @@ void Ekf::controlFakePosFusion()
 			if (starting_conditions_passing) {
 				ECL_INFO("start fake position fusion");
 				_control_status.flags.fake_pos = true;
-				_fuse_hpos_as_odom = false; // TODO: needed?
 				resetFakePosFusion();
 
 				if (_control_status.flags.tilt_align) {
@@ -119,7 +120,7 @@ void Ekf::resetFakePosFusion()
 	resetHorizontalPositionToLastKnown();
 	resetHorizontalVelocityToZero();
 
-	_aid_src_fake_pos.time_last_fuse = _imu_sample_delayed.time_us;
+	_aid_src_fake_pos.time_last_fuse = _time_delayed_us;
 }
 
 void Ekf::stopFakePosFusion()
